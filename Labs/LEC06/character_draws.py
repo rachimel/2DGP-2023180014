@@ -18,6 +18,7 @@ class Object:
     def __init__(self, path, x=0, y=0, move_type=""):
         self.pos = Vec2(x,y)
         self.speed = 0
+        self.angular_speed = 5
         self.angle = 0
         self.direction = Vec2(0,0)
         self.image = load_image(os.getcwd() + path)
