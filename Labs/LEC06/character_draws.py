@@ -27,7 +27,8 @@ class Object:
         self.angle += self.speed
         if self.move_type == "Circle":
             self.direction = Vec2(math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle)))
-
+        elif self.move_type == "Square" and self.angle % 90 == 0:
+            self.direction = Vec2(-self.direction.y, self.direction.x)
 
     def move(self):
         self.pos += self.direction * self.speed
