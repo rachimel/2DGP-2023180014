@@ -11,7 +11,6 @@ class Object:
     def __init__(self):
         self.pos = Vec2()
 
-
 # 실행 함수
 def run():
     open_canvas()
@@ -30,6 +29,10 @@ def handle_events():
         # 키보드 입력을 넣으면 더 재밌겠지?
         if(event.type == SDL_KEYDOWN):
             pass
+
+# 일단 오브젝트를 그려야겠지...
+def render(objects) : # 나는 복사가 싫어요
+    pass
 
 if __name__ == "__main__":
     run()
