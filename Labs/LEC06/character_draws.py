@@ -17,7 +17,7 @@ class Object:
 def run():
     open_canvas()
     # 오브젝트를 만들자
-    path = "\\LEC05\\character.png"
+    path = "\\Labs\\LEC06\\character.png"
     objects = []
     objects.append(Object(path,200,300))
     objects.append(Object(path,400,300))
