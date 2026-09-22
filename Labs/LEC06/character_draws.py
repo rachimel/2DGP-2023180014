@@ -76,7 +76,7 @@ def handle_events(objects):
     for event in events:
         if(event.type == SDL_QUIT):
             exit()
-        if(event.type == SDL_KEYDOWN):
+        elif(event.type == SDL_KEYDOWN):
             handle_key_events(event, objects)
 
 def handle_key_events(event, objects):
