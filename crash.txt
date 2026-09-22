@@ -1,0 +1,9 @@
+Pico2d is prepared.
+cannot load character.png
+Traceback (most recent call last):
+  File "C:\Z_Workspace\01_Projects\01_ActivePython\2DGP-2023180014\LEC05\character.py", line 5, in <module>
+    character = load_image('character.png')
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\3este\miniconda3\envs\game2d\Lib\site-packages\pico2d\pico2d.py", line 416, in load_image
+    raise IOError
+OSError
