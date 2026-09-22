@@ -33,11 +33,16 @@ def run():
     objects.append(Object(path,600,300))
     while True:
         handle_events()
+        update()
         clear_canvas()
         render(objects)
         update_canvas()
         delay(0.016)
     close_canvas()
+
+# 객체 업데이트 루프
+def update(objects):
+    pass
 
 # SDL 이벤트 루프
 def handle_events():
