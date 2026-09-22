@@ -79,7 +79,7 @@ def handle_events(objects):
             handle_key_events(event, objects)
 
 def handle_key_events(event, objects):
-    if(event.key == SDLK_PLUS):
+    if(event.key == SDLK_EQUALS):
         for object in objects:
             object.speed += 1
     elif(event.key == SDLK_MINUS):
