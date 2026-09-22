@@ -1,4 +1,5 @@
 from pico2d import *
+from typing import Self
 import os
 import math
 
@@ -6,6 +7,11 @@ class Vec2:
     def __init__(self,x,y):
         self.x = x
         self.y = y
+    def __add__(self, rhs : Self):
+        return Vec2(self.x + rhs.x, self.y + rhs.y)
+
+    def __mul__(self, rhs):
+        self.x, self.y = self.x * rhs, self.y * rhs
 
 class Object:
     def __init__(self, path, x=0, y=0):
@@ -14,6 +20,8 @@ class Object:
         self.direction = Vec2(0,0)
         self.image = load_image(os.getcwd() + path)
 
+    def move(self):
+        self.pos += self.direction * self.speed
 # 실행 함수
 def run():
     open_canvas()
