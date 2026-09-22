@@ -27,6 +27,9 @@ def handle_events():
     for event in events:
         if(event.type == SDL_QUIT):
             exit()
+        # 키보드 입력을 넣으면 더 재밌겠지?
+        if(event.type == SDL_KEYDOWN):
+            pass
 
 if __name__ == "__main__":
     run()
