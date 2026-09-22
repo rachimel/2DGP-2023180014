@@ -33,8 +33,9 @@ class Object:
             elif(self.move_type == "Square"):
                 self.direction = Vec2(1,0)
                 self.move_type = "Triangle"
-            elif(self.move_type == "Triangle"):
-                self.move_type = "Circle"
+        elif(self.move_type == "Triangle") and (self.angle >= 180):
+            self.angle = 0
+            self.move_type = "Circle"
 
         if self.move_type == "Circle":
             self.direction = Vec2(math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle)))
