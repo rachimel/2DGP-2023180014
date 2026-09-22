@@ -25,7 +25,7 @@ class Object:
         self.move_type = move_type
 
     def update(self):
-        self.angle += self.speed
+        self.angle += self.angular_speed
         if self.move_type == "Circle":
             self.direction = Vec2(math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle)))
         elif self.move_type == "Square" and self.angle % 90 == 0:
