@@ -18,12 +18,17 @@ class Object:
     def __init__(self, path, x=0, y=0, move_type=""):
         self.pos = Vec2(x,y)
         self.speed = 0
+        self.angle = 0
         self.direction = Vec2(0,0)
         self.image = load_image(os.getcwd() + path)
         self.move_type = move_type
 
     def update(self):
-        pass
+        self.angle += self.speed
+        if self.move_type == "Circle":
+            self.direction = Vec2(math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle)))
+
+
     def move(self):
         self.pos += self.direction * self.speed
 
@@ -35,8 +40,14 @@ def run():
     path = "\\Labs\\LEC06\\character.png"
     objects = []
     objects.append(Object(path,200,300, "Circle"))
+    objects[0].speed = 5
     objects.append(Object(path,400,300, "Square"))
+    objects[1].direction = Vec2(1, 0)
+    objects[1].speed = 5
     objects.append(Object(path,600,300, "Triangle"))
+    objects[2].direction = Vec2(1, 0)
+    objects[2].speed = 5
+
     while True:
         handle_events(objects)
         update(objects)
@@ -49,6 +60,7 @@ def run():
 # 객체 업데이트 루프
 def update(objects):
     for object in objects:
+        object.update()
         object.move()
 
 # SDL 이벤트 루프
