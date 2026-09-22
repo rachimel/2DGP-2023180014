@@ -29,6 +29,11 @@ class Object:
             self.direction = Vec2(math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle)))
         elif self.move_type == "Square" and self.angle % 90 == 0:
             self.direction = Vec2(-self.direction.y, self.direction.x)
+        elif self.move_type == "Triangle" and self.angle % 60 == 0:
+            x = self.direction.x
+            y = self.direction.y
+            self.direction = Vec2(x * math.cos(math.radians(120)) - y * math.sin(math.radians(120)),
+                x * math.sin(math.radians(120)) + y * math.cos(math.radians(120)))
 
     def move(self):
         self.pos += self.direction * self.speed
