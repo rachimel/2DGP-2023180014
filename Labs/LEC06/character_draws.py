@@ -15,12 +15,15 @@ class Vec2:
         return Vec2(self.x * rhs, self.y * rhs)
 
 class Object:
-    def __init__(self, path, x=0, y=0):
+    def __init__(self, path, x=0, y=0, move_type=""):
         self.pos = Vec2(x,y)
         self.speed = 0
         self.direction = Vec2(0,0)
         self.image = load_image(os.getcwd() + path)
+        self.move_type = move_type
 
+    def update(self):
+        pass
     def move(self):
         self.pos += self.direction * self.speed
 
@@ -31,9 +34,9 @@ def run():
     # 오브젝트를 만들자
     path = "\\Labs\\LEC06\\character.png"
     objects = []
-    objects.append(Object(path,200,300))
-    objects.append(Object(path,400,300))
-    objects.append(Object(path,600,300))
+    objects.append(Object(path,200,300, "Circle"))
+    objects.append(Object(path,400,300, "Square"))
+    objects.append(Object(path,600,300, "Triangle"))
     while True:
         handle_events(objects)
         update(objects)
