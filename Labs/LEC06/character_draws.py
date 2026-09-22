@@ -17,7 +17,9 @@ def run():
     # 오브젝트를 만들자
     path = "\\LEC05\\character.png"
     objects = []
+    objects.append(Object(path,200,300))
     objects.append(Object(path,400,300))
+    objects.append(Object(path,600,300))
     while True:
         handle_events()
         clear_canvas()
