@@ -1,5 +1,8 @@
 from pico2d import *
 
+# 실행 함수
+def run():
+    pass
 # SDL 이벤트 루프
 def handle_events():
     events = get_events()
@@ -13,4 +16,4 @@ while True:
 close_canvas()
 
 if __name__ == "__main__":
-    pass
+    run()
