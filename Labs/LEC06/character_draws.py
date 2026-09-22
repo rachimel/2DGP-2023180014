@@ -1,5 +1,11 @@
 from pico2d import *
 
+# 오브젝트를 일단 선언할까?
+class Object:
+    def __init__(self):
+        self.x = 0;
+        self.y = 0;
+
 # 실행 함수
 def run():
     open_canvas()
