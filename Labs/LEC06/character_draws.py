@@ -1,6 +1,6 @@
 from pico2d import *
 import os
-
+import math
 class Vec2:
     def __init__(self,x,y):
         self.x = x
