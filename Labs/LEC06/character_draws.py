@@ -3,6 +3,7 @@ from typing import Self
 import os
 import math
 
+
 class Vec2:
     def __init__(self,x,y):
         self.x = x
@@ -22,6 +23,8 @@ class Object:
 
     def move(self):
         self.pos += self.direction * self.speed
+
+
 # 실행 함수
 def run():
     open_canvas()
@@ -32,8 +35,8 @@ def run():
     objects.append(Object(path,400,300))
     objects.append(Object(path,600,300))
     while True:
-        handle_events()
-        update()
+        handle_events(objects)
+        update(objects)
         clear_canvas()
         render(objects)
         update_canvas()
@@ -42,16 +45,26 @@ def run():
 
 # 객체 업데이트 루프
 def update(objects):
-    pass
+    for object in objects:
+        object.move()
 
 # SDL 이벤트 루프
-def handle_events():
+def handle_events(objects):
     events = get_events()
     for event in events:
         if(event.type == SDL_QUIT):
             exit()
         if(event.type == SDL_KEYDOWN):
-            pass
+            handle_key_events(event, objects)
+
+def handle_key_events(event, objects):
+    if(event.key == SDLK_PLUS):
+        for object in objects:
+            object.speed += 1
+    elif(event.key == SDLK_MINUS):
+        for object in objects:
+            object.speed -= 1
+
 # 렌더 함수
 def render(objects) :
     for object in objects:
