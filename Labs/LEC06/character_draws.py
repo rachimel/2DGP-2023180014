@@ -1,6 +1,7 @@
 from pico2d import *
 import os
 import math
+
 class Vec2:
     def __init__(self,x,y):
         self.x = x
@@ -9,6 +10,7 @@ class Vec2:
 class Object:
     def __init__(self, path, x=0, y=0):
         self.pos = Vec2(x,y)
+        self.direction = Vec2(0,0)
         self.image = load_image(os.getcwd() + path)
 
 # 실행 함수
