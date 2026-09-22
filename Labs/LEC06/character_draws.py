@@ -3,7 +3,6 @@ from typing import Self
 import os
 import math
 
-
 class Vec2:
     def __init__(self,x,y):
         self.x = x
@@ -26,6 +25,17 @@ class Object:
 
     def update(self):
         self.angle += self.angular_speed
+        if(self.angle >= 360):
+            self.angle = 0
+            if(self.move_type == "Circle"):
+                self.direction = Vec2(1, 0)
+                self.move_type = "Square"
+            elif(self.move_type == "Square"):
+                self.direction = Vec2(1,0)
+                self.move_type = "Triangle"
+            elif(self.move_type == "Triangle"):
+                self.move_type = "Circle"
+
         if self.move_type == "Circle":
             self.direction = Vec2(math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle)))
         elif self.move_type == "Square" and self.angle % 90 == 0:
@@ -48,12 +58,6 @@ def run():
     objects = []
     objects.append(Object(path,200,300, "Circle"))
     objects[0].speed = 5
-    objects.append(Object(path,400,300, "Square"))
-    objects[1].direction = Vec2(1, 0)
-    objects[1].speed = 5
-    objects.append(Object(path,600,300, "Triangle"))
-    objects[2].direction = Vec2(1, 0)
-    objects[2].speed = 5
 
     while True:
         handle_events(objects)
