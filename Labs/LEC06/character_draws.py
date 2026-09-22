@@ -11,7 +11,7 @@ class Vec2:
         return Vec2(self.x + rhs.x, self.y + rhs.y)
 
     def __mul__(self, rhs):
-        self.x, self.y = self.x * rhs, self.y * rhs
+        return Vec2(self.x * rhs, self.y * rhs)
 
 class Object:
     def __init__(self, path, x=0, y=0):
