@@ -46,7 +46,11 @@ def run():
             sonic_x, sonic_y, sonic_scale, animation_fps
         )
         current_frame = playback_frame % len(frames) + 1
-        font.draw(10, 570, f"{current_frame} / {len(frames)}", (255, 255, 255))
+        font.draw(10, 570, f"프레임 : {current_frame} / {len(frames)}", (255, 255, 255))
+        font.draw(
+            10, 540, f"애니메이션 : {animation_index + 1} / {len(animation_rows)}",
+            (255, 255, 255)
+        )
         update_canvas()
         delay(0.016)
 
