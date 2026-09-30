@@ -7,6 +7,7 @@ def run():
     sonic_image = load_image(str(Path(__file__).with_name("sonic-sprite.png")))
     sonic_x = 400
     sonic_y = 300
+    sonic_scale = 4
     frame_rects = (
         (1, 447, 29, 39),
         (31, 447, 26, 38),
@@ -29,7 +30,7 @@ def run():
         frame_left, frame_bottom, frame_width, frame_height = frame_rects[frame_index]
         sonic_image.clip_draw(
             frame_left, frame_bottom, frame_width, frame_height,
-            sonic_x, sonic_y, 120, 150
+            sonic_x, sonic_y, frame_width * sonic_scale, frame_height * sonic_scale
         )
         update_canvas()
         delay(0.016)
