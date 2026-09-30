@@ -14,6 +14,7 @@ def run():
             if event.type == SDL_QUIT:
                 running = False
         clear_canvas()
+        sonic_image.clip_draw(0, 447, 31, 39, sonic_x, sonic_y)
         update_canvas()
         delay(0.016)
 
