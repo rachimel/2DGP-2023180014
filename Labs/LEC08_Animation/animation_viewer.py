@@ -5,6 +5,8 @@ from pathlib import Path
 def run():
     open_canvas(800, 600)
     sonic_image = load_image(str(Path(__file__).with_name("sonic-sprite.png")))
+    sonic_x = 400
+    sonic_y = 300
 
     running = True
     while running:
