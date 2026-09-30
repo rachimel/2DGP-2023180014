@@ -12,7 +12,8 @@ def run():
         animation_data = json.load(animation_file)
     animation_fps = animation_data["fps"]
     animation_rows = animation_data["animations"]
-    total_frames = sum(len(frames) for frames in animation_rows)
+    repeat_count = 5
+    total_frames = sum(len(frames) * repeat_count for frames in animation_rows)
     sonic_image = load_image(str(Path(__file__).with_name("sonic-sprite.png")))
     sonic_x = 400
     sonic_y = 300
@@ -27,13 +28,14 @@ def run():
         clear_canvas()
         frame_index = int((get_time() - animation_start) * animation_fps) % total_frames
         for frames in animation_rows:
-            if frame_index < len(frames):
+            animation_frames = len(frames) * repeat_count
+            if frame_index < animation_frames:
                 play_animation(
-                    sonic_image, frames, frame_index / animation_fps,
+                    sonic_image, frames, frame_index % len(frames) / animation_fps,
                     sonic_x, sonic_y, sonic_scale, animation_fps
                 )
                 break
-            frame_index -= len(frames)
+            frame_index -= animation_frames
         update_canvas()
         delay(0.016)
 
