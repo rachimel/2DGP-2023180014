@@ -18,6 +18,7 @@ def run():
         (182, 447, 29, 38),
         (211, 448, 28, 38),
     )
+    foot_x_positions = (18, 14.5, 17, 17.5, 17.5, 13.5, 11.5, 17.5)
     animation_start = get_time()
 
     running = True
@@ -30,10 +31,11 @@ def run():
         frame_left, frame_bottom, frame_width, frame_height = frame_rects[frame_index]
         draw_width = frame_width * sonic_scale
         draw_height = frame_height * sonic_scale
+        draw_x = sonic_x + draw_width // 2 - foot_x_positions[frame_index] * sonic_scale
         draw_y = sonic_y + draw_height // 2
         sonic_image.clip_draw(
             frame_left, frame_bottom, frame_width, frame_height,
-            sonic_x, draw_y, draw_width, draw_height
+            draw_x, draw_y, draw_width, draw_height
         )
         update_canvas()
         delay(0.016)
