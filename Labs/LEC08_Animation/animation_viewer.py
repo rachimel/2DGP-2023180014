@@ -1,8 +1,10 @@
 from pico2d import *
+from pathlib import Path
 
 
 def run():
     open_canvas(800, 600)
+    sonic_image = load_image(str(Path(__file__).with_name("sonic-sprite.png")))
 
     running = True
     while running:
