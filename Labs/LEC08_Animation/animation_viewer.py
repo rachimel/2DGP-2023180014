@@ -28,9 +28,12 @@ def run():
         clear_canvas()
         frame_index = int((get_time() - animation_start) * 8) % len(frame_rects)
         frame_left, frame_bottom, frame_width, frame_height = frame_rects[frame_index]
+        draw_width = frame_width * sonic_scale
+        draw_height = frame_height * sonic_scale
+        draw_y = sonic_y + draw_height // 2
         sonic_image.clip_draw(
             frame_left, frame_bottom, frame_width, frame_height,
-            sonic_x, sonic_y, frame_width * sonic_scale, frame_height * sonic_scale
+            sonic_x, draw_y, draw_width, draw_height
         )
         update_canvas()
         delay(0.016)
