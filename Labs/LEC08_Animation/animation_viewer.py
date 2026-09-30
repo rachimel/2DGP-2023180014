@@ -7,7 +7,16 @@ def run():
     sonic_image = load_image(str(Path(__file__).with_name("sonic-sprite.png")))
     sonic_x = 400
     sonic_y = 300
-    frame_bounds = (0, 30, 57, 86, 116, 148, 180, 209, 239)
+    frame_rects = (
+        (1, 447, 29, 39),
+        (31, 447, 26, 38),
+        (58, 447, 28, 39),
+        (86, 447, 30, 38),
+        (118, 447, 30, 38),
+        (150, 447, 30, 38),
+        (182, 447, 29, 38),
+        (211, 448, 28, 38),
+    )
     animation_start = get_time()
 
     running = True
@@ -16,10 +25,12 @@ def run():
             if event.type == SDL_QUIT:
                 running = False
         clear_canvas()
-        frame_index = int((get_time() - animation_start) * 8) % (len(frame_bounds) - 1)
-        frame_left = frame_bounds[frame_index]
-        frame_width = frame_bounds[frame_index + 1] - frame_left
-        sonic_image.clip_draw(frame_left, 447, frame_width, 39, sonic_x, sonic_y, 120, 150)
+        frame_index = int((get_time() - animation_start) * 8) % len(frame_rects)
+        frame_left, frame_bottom, frame_width, frame_height = frame_rects[frame_index]
+        sonic_image.clip_draw(
+            frame_left, frame_bottom, frame_width, frame_height,
+            sonic_x, sonic_y, 120, 150
+        )
         update_canvas()
         delay(0.016)
 
