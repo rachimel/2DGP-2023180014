@@ -1,12 +1,18 @@
+import json
 from pathlib import Path
 
 from pico2d import *
 
-from sonic_animations import ANIMATION_FPS, ANIMATION_ROWS, TOTAL_FRAMES, play_animation
+from sonic_animations import play_animation
 
 
 def run():
     open_canvas(800, 600)
+    with Path(__file__).with_name("sonic_animations.json").open(encoding="utf-8") as animation_file:
+        animation_data = json.load(animation_file)
+    animation_fps = animation_data["fps"]
+    animation_rows = animation_data["animations"]
+    total_frames = sum(len(frames) for frames in animation_rows)
     sonic_image = load_image(str(Path(__file__).with_name("sonic-sprite.png")))
     sonic_x = 400
     sonic_y = 300
@@ -19,12 +25,12 @@ def run():
             if event.type == SDL_QUIT:
                 running = False
         clear_canvas()
-        frame_index = int((get_time() - animation_start) * ANIMATION_FPS) % TOTAL_FRAMES
-        for frames in ANIMATION_ROWS:
+        frame_index = int((get_time() - animation_start) * animation_fps) % total_frames
+        for frames in animation_rows:
             if frame_index < len(frames):
                 play_animation(
-                    sonic_image, frames, frame_index / ANIMATION_FPS,
-                    sonic_x, sonic_y, sonic_scale
+                    sonic_image, frames, frame_index / animation_fps,
+                    sonic_x, sonic_y, sonic_scale, animation_fps
                 )
                 break
             frame_index -= len(frames)
