@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pico2d
 from pico2d import *
 
 from sonic_animations import play_animation
@@ -15,6 +16,8 @@ def run():
     repeat_count = 5
     pause_duration = 1.0
     sonic_image = load_image(str(Path(__file__).with_name("sonic-sprite.png")))
+    font_path = Path(pico2d.__file__).parent / "data" / "ConsolaMalgun.ttf"
+    font = load_font(str(font_path), 24)
     sonic_x = 400
     sonic_y = 300
     sonic_scale = 4
@@ -42,6 +45,8 @@ def run():
             sonic_image, frames, playback_frame / animation_fps,
             sonic_x, sonic_y, sonic_scale, animation_fps
         )
+        current_frame = playback_frame % len(frames) + 1
+        font.draw(10, 570, f"{current_frame} / {len(frames)}", (255, 255, 255))
         update_canvas()
         delay(0.016)
 
