@@ -22,7 +22,10 @@ THUMBNAILS = (24, 60, 1052, 122)
 SPEED_INPUT = (560, 663, 126, 30)
 SPEED_APPLY = (698, 663, 96, 30)
 PLAY_Y = 332
-PLAY_MOVE_SPEED = 200
+GAME_ROLES = {"start": 8, "idle": 7, "walk": 0, "run": 1, "charge": 3,
+              "dash": 2, "jump": 4, "brake": 5, "hurt": 6, "goal": 9}
+ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run": "달리기", "charge": "스핀 충전",
+               "dash": "대시", "jump": "점프", "brake": "제동", "hurt": "피격", "goal": "골"}
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
 TEXT = (223, 230, 242)
@@ -60,6 +63,20 @@ class Project:
     image_path: Path
     animations: list
     fps: float = DEFAULT_FPS
+    game_roles: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        for role, index in GAME_ROLES.items():
+            if role not in self.game_roles:
+                name = f"동작 {index + 1:02}"
+                self.game_roles[role] = next((a for a in self.animations if a.name == name),
+                                              self.animations[min(index, len(self.animations) - 1)])
+
+    def role_animation(self, role):
+        candidate = self.game_roles[role]
+        if not any(a is candidate for a in self.animations):
+            candidate = self.game_roles[role] = self.animations[0]
+        return candidate
 
 
 def new_project(image_path):
@@ -79,6 +96,8 @@ def project_document(project, image_size, target):
     return {
         "version": 1, "fps": project.fps, "coordinates": "bottom-left",
         "image": {"path": image_reference, "size": list(image_size)},
+        "game_roles": {role: next(i for i, a in enumerate(project.animations) if a is project.role_animation(role))
+                       for role in GAME_ROLES},
         "animations": [
             {"name": animation.name, "frames": [
                 {"rect": list(frame.rect) if frame.rect else None, "pivot": list(frame.pivot)}
@@ -148,7 +167,13 @@ def parse_project(document, source):
     image_path = Path(reference)
     if not image_path.is_absolute():
         image_path = Path(source).resolve().parent / image_path
-    return Project(image_path.resolve(), animations, fps), tuple(size)
+    role_entries = document.get("game_roles", {})
+    require(isinstance(role_entries, dict), "플레이 동작 설정이 잘못됐어.")
+    roles = {}
+    for role, index in role_entries.items():
+        require(role in GAME_ROLES and type(index) is int and 0 <= index < len(animations), "플레이 동작 연결이 잘못됐어.")
+        roles[role] = animations[index]
+    return Project(image_path.resolve(), animations, fps, roles), tuple(size)
 
 
 def import_project(source):
@@ -244,6 +269,141 @@ class Player:
             self.index += 1
 
 
+class Game:
+    """도형 맵에서 고정 간격으로 입력·이동·충돌·동작을 처리한다."""
+    STEP = 1 / 120
+    HALF_WIDTH, HEIGHT = 20, 58
+    WORLD_WIDTH, GOAL_X = 2600, 2470
+
+    def __init__(self, project):
+        self.project = project
+        self.x, self.y, self.vx, self.vy = 100.0, 0.0, 0.0, 0.0
+        self.facing = 1
+        self.grounded = True
+        self.state = "start"
+        self.elapsed = self.accumulator = 0.0
+        self.start_time = 0.6
+        self.hurt_time = self.invincible = self.dash_time = self.spring_wait = 0.0
+        self.charge = 0.0
+        self.charging = self.finished = False
+        self.hits = 0
+        self.keys = set()
+        self.obstacles = [(480, 58, 46), (850, 70, 64), (1660, 90, 58), (2050, 65, 45)]
+        self.springs = [(1120, 42), (1830, 42)]
+        self.spikes = [(1450, 70)]
+        self.enemies = [{"x": x, "left": x - 60, "right": x + 60, "direction": 1, "alive": True}
+                        for x in (680, 1320, 2240)]
+
+    @property
+    def animation(self):
+        return self.project.role_animation(self.state)
+
+    @property
+    def frame_index(self):
+        return int((self.elapsed + 1e-10) * self.project.fps) % len(self.animation.frames)
+
+    def press(self, key):
+        if self.finished:
+            return
+        self.keys.add(key)
+        if self.start_time > 0 or self.hurt_time > 0:
+            return
+        if key == "jump" and self.grounded:
+            self.vy, self.grounded, self.charging = 550, False, False
+        elif key == "shift" and self.grounded:
+            self.charging, self.charge, self.vx = True, 0.0, 0.0
+
+    def release(self, key):
+        self.keys.discard(key)
+        if key == "shift" and self.charging:
+            self.charging = False
+            self.vx = self.facing * (400 + self.charge * 220)
+            self.dash_time = 0.8
+
+    def stop_input(self):
+        self.keys.clear()
+        self.charging = False
+
+    def damage(self):
+        if self.invincible > 0:
+            return
+        self.hits += 1
+        self.x, self.y, self.vx, self.vy = 100.0, 0.0, 0.0, 0.0
+        self.grounded, self.charging = True, False
+        self.hurt_time, self.invincible, self.dash_time = 0.5, 1.5, 0
+        self.keys.clear()
+
+    def update(self, dt):
+        self.accumulator += max(0, dt)
+        while self.accumulator + 1e-10 >= self.STEP:
+            self.accumulator = max(0, self.accumulator - self.STEP)
+            self.step(self.STEP)
+
+    def step(self, dt):
+        self.elapsed += dt
+        for timer in ("start_time", "hurt_time", "invincible", "dash_time", "spring_wait"):
+            setattr(self, timer, max(0, getattr(self, timer) - dt))
+        if self.finished:
+            return
+        for enemy in self.enemies:
+            if enemy["alive"]:
+                enemy["x"] += enemy["direction"] * 60 * dt
+                if enemy["x"] >= enemy["right"] or enemy["x"] <= enemy["left"]:
+                    enemy["direction"] *= -1
+        direction = int("right" in self.keys) - int("left" in self.keys)
+        if direction:
+            self.facing = direction
+        if self.start_time > 0 or self.hurt_time > 0:
+            direction = 0
+        if self.charging:
+            self.charge = min(1, self.charge + dt)
+            self.vx = 0
+        elif self.dash_time <= 0:
+            if direction:
+                self.vx = max(-360, min(360, self.vx + direction * 360 * dt))
+            else:
+                self.vx = math.copysign(max(0, abs(self.vx) - 520 * dt), self.vx)
+        old_x, old_y = self.x, self.y
+        self.x = max(self.HALF_WIDTH, min(self.WORLD_WIDTH - self.HALF_WIDTH, self.x + self.vx * dt))
+        for x, width, height in self.obstacles:
+            if self.x + self.HALF_WIDTH > x and self.x - self.HALF_WIDTH < x + width and self.y < height - 0.01:
+                self.x = x - self.HALF_WIDTH if old_x < x else x + width + self.HALF_WIDTH
+                self.vx, self.dash_time = 0, 0
+        self.vy -= 1400 * dt
+        self.y += self.vy * dt
+        self.grounded = False
+        if self.y <= 0:
+            self.y, self.vy, self.grounded = 0, 0, True
+        for x, width, height in self.obstacles:
+            if self.x + self.HALF_WIDTH > x and self.x - self.HALF_WIDTH < x + width:
+                if self.vy <= 0 and old_y >= height - 0.01 and self.y <= height:
+                    self.y, self.vy, self.grounded = height, 0, True
+        for x, width in self.springs:
+            if self.spring_wait <= 0 and self.y <= 12 and self.x + self.HALF_WIDTH > x and self.x - self.HALF_WIDTH < x + width:
+                self.y, self.vy, self.grounded, self.spring_wait = 12, 720, False, 0.35
+                self.charging = False
+        for x, width in self.spikes:
+            if self.y < 26 and self.x + self.HALF_WIDTH > x and self.x - self.HALF_WIDTH < x + width:
+                self.damage()
+        for enemy in self.enemies:
+            if enemy["alive"] and abs(self.x - enemy["x"]) < self.HALF_WIDTH + 18 and self.y < 36:
+                if self.dash_time > 0 or (self.vy < 0 and old_y >= 30):
+                    enemy["alive"] = False
+                    if self.vy < 0:
+                        self.vy, self.grounded = 350, False
+                else:
+                    self.damage()
+        if self.x >= self.GOAL_X and self.grounded:
+            self.finished = True
+            self.vx = 0
+        state = ("goal" if self.finished else "hurt" if self.hurt_time > 0 else "start" if self.start_time > 0
+                 else "charge" if self.charging else "jump" if not self.grounded else "dash" if self.dash_time > 0
+                 else "brake" if not direction and abs(self.vx) > 5 else "run" if abs(self.vx) >= 220
+                 else "walk" if abs(self.vx) > 5 else "idle")
+        if state != self.state:
+            self.state, self.elapsed = state, 0.0
+
+
 def contains(box, x, y):
     left, bottom, width, height = box
     return left <= x < left + width and bottom <= y < bottom + height
@@ -320,10 +480,8 @@ class App:
         self.fps_editing = False
         self.fps_select_all = False
         self.fps_text = f"{self.project.fps:g}"
-        self.play_x = WIDTH / 2
-        self.play_elapsed = 0.0
+        self.game = Game(self.project)
         self.play_paused = False
-        self.play_keys = set()
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -337,13 +495,13 @@ class App:
     def frame(self):
         return self.animation.frames[self.frame_index]
 
-    def draw_frame(self, frame, x, y, scale):
+    def draw_frame(self, frame, x, y, scale, flip=False):
         if frame.rect is None:
             return
         left, bottom, w, h = frame.rect
         px, py = frame.pivot
-        self.image.clip_draw(left, bottom, w, h,
-                             x + (w / 2 - px) * scale,
+        self.image.clip_composite_draw(left, bottom, w, h, 0, 'h' if flip else '',
+                             x + (px - w / 2 if flip else w / 2 - px) * scale,
                              y + (h / 2 - py) * scale, w * scale, h * scale)
 
     def button(self, box, label, action, active=False):
@@ -424,7 +582,7 @@ class App:
         self.frame_index = 0
 
     def start_fps_edit(self):
-        self.play_keys.clear()
+        self.game.stop_input()
         self.fps_editing = True
         self.fps_select_all = True
         self.fps_text = f"{self.project.fps:g}"
@@ -443,8 +601,8 @@ class App:
             self.status = "재생 속도는 0.1~240fps 사이의 숫자로 입력해."
             return
         if self.screen == "play":
-            self.play_elapsed *= old_fps / self.project.fps
-            self.frame_index = int((self.play_elapsed + 1e-10) * self.project.fps) % len(self.animation.frames)
+            self.game.elapsed *= old_fps / self.project.fps
+            self.sync_game()
         else:
             self.frame_index = self.player.frame_index
         self.cancel_fps_edit()
@@ -575,9 +733,10 @@ class App:
         self.player.select(index)
         self.animation_index = self.player.index
         self.frame_index = 0
-        self.play_elapsed = 0.0
 
     def handle_wheel(self, dx, dy, x, y):
+        if self.screen == "play":
+            return
         if self.thumbnail_drag:
             if contains(THUMBNAILS, x, y) and dy:
                 self.thumbnail_drag["anchor"] = (self.thumbnail_drag["anchor"] - int(dy)) % len(self.project.animations)
@@ -603,35 +762,74 @@ class App:
         self.screen = screen
         self.player.select(self.animation_index)
         self.frame_index = 0
-        self.play_elapsed = 0.0
-        self.play_keys.clear()
+        self.game.stop_input()
 
         if screen == "play":
             self.reset_play()
 
     def toggle_play_pause(self):
         self.play_paused = not self.play_paused
-        self.play_keys.clear()
+        self.game.stop_input()
 
     def reset_play(self):
-        self.play_x = WIDTH / 2
-        self.play_elapsed = 0.0
-        self.frame_index = 0
+        self.game = Game(self.project)
         self.play_paused = False
-        self.play_keys.clear()
+        if self.screen == "play":
+            self.sync_game()
+
+    def sync_game(self):
+        self.animation_index = next(i for i, a in enumerate(self.project.animations) if a is self.game.animation)
+        self.player.index = self.animation_index
+        self.frame_index = self.game.frame_index
+
+    def cycle_role(self, role):
+        current = self.project.role_animation(role)
+        index = next(i for i, a in enumerate(self.project.animations) if a is current)
+        self.project.game_roles[role] = self.project.animations[(index + 1) % len(self.project.animations)]
+        self.sync_game()
+
+    def draw_game_roles(self):
+        self.text(34, 166, "동작 연결 · 버튼을 클릭해서 사용할 애니메이션 변경")
+        for i, role in enumerate(GAME_ROLES):
+            box = (34 + i % 5 * 208, 112 - i // 5 * 44, 198, 38)
+            label = f"{ROLE_LABELS[role]}: {self.project.role_animation(role).name[:8]}"
+            self.button(box, label, lambda r=role: self.cycle_role(r), self.game.state == role)
 
     def draw_play(self):
+        game = self.game
+        camera = max(0, min(game.WORLD_WIDTH - VIEW[2], game.x - VIEW[2] * .42))
+        sx = lambda x: VIEW[0] + x - camera
         with clipped(VIEW):
             rectangle((VIEW[0], VIEW[1], VIEW[2], PLAY_Y - VIEW[1]), (35, 48, 58))
             p.draw_line(VIEW[0], PLAY_Y, VIEW[0] + VIEW[2] - 1, PLAY_Y, 126, 179, 144)
-            for x in range(100, WIDTH, 100):
-                p.draw_line(x, PLAY_Y - 6, x, PLAY_Y, 126, 179, 144)
-            self.draw_frame(self.frame, self.play_x, PLAY_Y, self.view_scale)
-        self.text(40, 628, f"PLAY TEST BED / {self.animation.name}")
-        self.text(40, 600, f"고정 Y: {PLAY_Y} / X: {self.play_x:.1f} / {self.project.fps:g}fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)}")
-        self.text(40, 572, "선택한 동작 반복 · 중력 없음 · A/D 이동", (153, 171, 196))
-        if self.frame.rect is None:
-            self.text(40, 546, "현재 프레임의 참조 영역이 미지정 상태야.")
+            for x, w, h in game.obstacles:
+                rectangle((sx(x), PLAY_Y, w, h), (102, 113, 132))
+            for x, w in game.springs:
+                rectangle((sx(x), PLAY_Y, w, 12), (246, 205, 74))
+                self.text(sx(x) - 12, PLAY_Y - 28, "스프링")
+            for x, w in game.spikes:
+                for offset in range(0, w, 14):
+                    p.draw_line(sx(x + offset), PLAY_Y, sx(x + offset + 7), PLAY_Y + 26, 246, 113, 91)
+                    p.draw_line(sx(x + offset + 7), PLAY_Y + 26, sx(x + offset + 14), PLAY_Y, 246, 113, 91)
+            for enemy in game.enemies:
+                if enemy["alive"]:
+                    rectangle((sx(enemy["x"]) - 18, PLAY_Y, 36, 36), (220, 83, 91))
+                    rectangle((sx(enemy["x"]) - 10, PLAY_Y + 23, 6, 6), (255, 255, 255))
+            for x, label, color in ((100, "시작", (114, 214, 151)), (game.GOAL_X, "골", (91, 209, 231))):
+                rectangle((sx(x), PLAY_Y, 3, 110), color)
+                rectangle((sx(x), PLAY_Y + 82, 44, 28), color)
+                self.text(sx(x) - 8, PLAY_Y + 124, label)
+            if not game.invincible or int(game.invincible * 12) % 2 == 0:
+                if self.frame.rect:
+                    self.draw_frame(self.frame, sx(game.x), PLAY_Y + game.y, 2, game.facing < 0)
+                else:
+                    rectangle((sx(game.x) - 20, PLAY_Y + game.y, 40, 58), (83, 150, 247))
+        self.text(40, 628, f"PLAY / {ROLE_LABELS[game.state]} / {self.animation.name}")
+        self.text(40, 600, f"이동 속도 {abs(game.vx):.0f} · 피격 {game.hits}회 · {self.project.fps:g}fps")
+        if game.finished:
+            self.text(40, 572, "골 도착! R 또는 다시 시작으로 재도전", (255, 215, 64))
+        elif game.charging:
+            self.text(40, 572, f"스핀 충전 {game.charge * 100:.0f}% · Shift를 놓으면 대시")
 
     def select_frame(self, step):
         self.cancel_drag()
@@ -847,13 +1045,14 @@ class App:
             return
         if event.type == p.SDL_QUIT:
             self.running = False
-        elif event.type == p.SDL_KEYUP and event.key in (p.SDLK_a, p.SDLK_d):
-            self.play_keys.discard(event.key)
-        elif event.type == p.SDL_KEYDOWN and self.screen == "play" and event.key in (p.SDLK_a, p.SDLK_d):
+        elif event.type in (p.SDL_KEYUP, p.SDL_KEYDOWN) and self.screen == "play" and event.key in (p.SDLK_a, p.SDLK_d, p.SDLK_w, p.SDLK_LSHIFT, p.SDLK_RSHIFT):
+            key = {p.SDLK_a: "left", p.SDLK_d: "right", p.SDLK_w: "jump", p.SDLK_LSHIFT: "shift", p.SDLK_RSHIFT: "shift"}[event.key]
             if not self.play_paused:
-                self.play_keys.add(event.key)
+                (self.game.press if event.type == p.SDL_KEYDOWN else self.game.release)(key)
         elif event.type == p.SDL_KEYDOWN and self.screen == "play" and event.key == p.SDLK_SPACE:
             self.toggle_play_pause()
+        elif event.type == p.SDL_KEYDOWN and self.screen == "play" and event.key == p.SDLK_r:
+            self.reset_play()
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_ESCAPE:
             if self.drag:
                 self.cancel_drag()
@@ -862,6 +1061,8 @@ class App:
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_DELETE and self.screen == "editor":
             self.remove_region()
         elif event.type == p.SDL_KEYDOWN and event.key in (p.SDLK_LEFT, p.SDLK_RIGHT):
+            if self.screen == "play":
+                return
             step = 1 if event.key == p.SDLK_RIGHT else -1
             if self.screen == "editor":
                 self.select_frame(step)
@@ -876,7 +1077,7 @@ class App:
             if self.fps_editing and not contains(SPEED_INPUT, x, y) and not contains(SPEED_APPLY, x, y):
                 self.cancel_fps_edit()
             if event.button == p.SDL_BUTTON_LEFT:
-                index = self.hit_thumbnail(x, y)
+                index = self.hit_thumbnail(x, y) if self.screen != "play" else None
                 if index is not None:
                     self.start_thumbnail_drag(index, x, y)
                     return
@@ -902,7 +1103,10 @@ class App:
         rectangle((0, 0, WIDTH, HEIGHT), BG)
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
-        self.draw_thumbnails()
+        if self.screen == "play":
+            self.draw_game_roles()
+        else:
+            self.draw_thumbnails()
         if self.screen == "editor":
             self.draw_editor()
         elif self.screen == "play":
@@ -930,7 +1134,7 @@ class App:
             self.draw_editor_controls()
         elif self.screen == "play":
             self.button((24, 663, 200, 30), "재생 [Space]" if self.play_paused else "일시정지 [Space]", self.toggle_play_pause, self.play_paused)
-            self.button((236, 663, 200, 30), "위치 / 재생 초기화", self.reset_play)
+            self.button((236, 663, 200, 30), "다시 시작 [R]", self.reset_play)
             self.draw_speed_control()
         else:
             self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
@@ -942,7 +1146,7 @@ class App:
                      if self.screen == "editor" else
                      "미리보기 클릭 선택 · 드래그 순서 변경 · 드래그 중 휠로 목록 넘기기 · Esc 드래그 취소")
         if self.screen == "play":
-            help_text = "A/D 좌우 이동 · Left/Right 또는 미리보기로 동작 선택 · Space 일시정지 · 휠 확대/축소"
+            help_text = "A/D 이동 → 달리기 · W 점프 · Shift 충전 후 놓아서 스핀 대시 · Space 일시정지 · R 다시 시작"
         self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
@@ -950,12 +1154,8 @@ class App:
             return
         if self.screen == "play":
             if not self.play_paused:
-                dt = max(0, dt)
-                direction = int(p.SDLK_d in self.play_keys) - int(p.SDLK_a in self.play_keys)
-                self.play_x = max(VIEW[0] + 20, min(VIEW[0] + VIEW[2] - 20,
-                                                  self.play_x + direction * PLAY_MOVE_SPEED * dt))
-                self.play_elapsed = (self.play_elapsed + dt) % (len(self.animation.frames) / self.project.fps)
-                self.frame_index = int((self.play_elapsed + 1e-10) * self.project.fps) % len(self.animation.frames)
+                self.game.update(min(.25, max(0, dt)))
+                self.sync_game()
             return
         self.player.update(dt)
         self.animation_index = self.player.index
