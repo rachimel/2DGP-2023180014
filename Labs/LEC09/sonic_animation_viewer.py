@@ -271,6 +271,42 @@ class App:
         self.player.select(self.animation_index)
         self.frame_index = 0
 
+    def select_frame(self, step):
+        self.frame_index = (self.frame_index + step) % len(self.animation.frames)
+
+    def add_frame(self):
+        self.animation.frames.insert(self.frame_index + 1, Frame())
+        self.frame_index += 1
+        self.player.select(self.animation_index)
+
+    def remove_frame(self):
+        if len(self.animation.frames) == 1:
+            self.animation.frames[0] = Frame()
+        else:
+            self.animation.frames.pop(self.frame_index)
+            self.frame_index = min(self.frame_index, len(self.animation.frames) - 1)
+        self.player.select(self.animation_index)
+
+    def add_animation(self):
+        self.project.animations.append(Animation(f"동작 {len(self.project.animations) + 1:02}"))
+        self.select_animation(len(self.project.animations) - 1)
+
+    def remove_animation(self):
+        if len(self.project.animations) == 1:
+            self.project.animations[0] = Animation("동작 01")
+        else:
+            self.project.animations.pop(self.animation_index)
+        self.select_animation(min(self.animation_index, len(self.project.animations) - 1))
+
+    def draw_editor_controls(self):
+        self.button((24, 663, 110, 30), "이전 프레임", lambda: self.select_frame(-1))
+        self.button((144, 663, 110, 30), "다음 프레임", lambda: self.select_frame(1))
+        self.button((264, 663, 130, 30), "프레임 추가", self.add_frame)
+        self.button((404, 663, 130, 30), "프레임 제거", self.remove_frame)
+        self.button((544, 663, 125, 30), "동작 추가", self.add_animation)
+        self.button((679, 663, 125, 30), "동작 제거", self.remove_animation)
+        self.text(40, 628, f"{self.animation.name} / 프레임 {self.frame_index + 1}/{len(self.animation.frames)}")
+
     def sheet_origin(self):
         return (VIEW[0] + (VIEW[2] - self.image.w * self.editor_scale) / 2 + self.editor_pan[0],
                 VIEW[1] + (VIEW[3] - self.image.h * self.editor_scale) / 2 + self.editor_pan[1])
@@ -288,7 +324,11 @@ class App:
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_TAB:
             self.toggle_screen()
         elif event.type == p.SDL_KEYDOWN and event.key in (p.SDLK_LEFT, p.SDLK_RIGHT):
-            self.select_animation(self.animation_index + (1 if event.key == p.SDLK_RIGHT else -1))
+            step = 1 if event.key == p.SDLK_RIGHT else -1
+            if self.screen == "editor":
+                self.select_frame(step)
+            else:
+                self.select_animation(self.animation_index + step)
         elif event.type == p.SDL_MOUSEWHEEL:
             mx, my = p.c_int(), p.c_int()
             p.SDL_GetMouseState(p.ctypes.byref(mx), p.ctypes.byref(my))
@@ -319,8 +359,11 @@ class App:
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.button((704, 704, 184, 36), "뷰어 / 편집 [Tab]", self.toggle_screen, self.screen == "editor")
-        self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
-        self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
+        if self.screen == "editor":
+            self.draw_editor_controls()
+        else:
+            self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
+            self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
         self.text(24, 32, self.status)
 
     def update(self, dt):
