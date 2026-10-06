@@ -130,6 +130,14 @@ def contains(box, x, y):
     return left <= x < left + width and bottom <= y < bottom + height
 
 
+def selection_rect(start, end, width, height):
+    ax, ay = start
+    bx, by = end
+    ax, bx = (max(0, min(width - 1, int(v))) for v in (ax, bx))
+    ay, by = (max(0, min(height - 1, int(v))) for v in (ay, by))
+    return (min(ax, bx), min(ay, by), abs(ax - bx) + 1, abs(ay - by) + 1)
+
+
 def rectangle(box, color, filled=True):
     x, y, w, h = box
     p.draw_rectangle(x, y, x + w - 1, y + h - 1, *color, filled=filled)
@@ -177,6 +185,9 @@ class App:
         self.screen = "viewer"
         self.editor_scale = min((VIEW[2] - 40) / self.image.w, (VIEW[3] - 40) / self.image.h)
         self.editor_pan = [0.0, 0.0]
+        self.region_mode = False
+        self.drag = None
+        self.draft_rect = None
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -250,6 +261,7 @@ class App:
             self.buttons.append((box, lambda i=index: self.select_animation(i)))
 
     def select_animation(self, index):
+        self.cancel_drag()
         self.player.select(index)
         self.animation_index = self.player.index
         self.frame_index = 0
@@ -267,19 +279,23 @@ class App:
                 self.editor_pan[0] += dx * 24
 
     def toggle_screen(self):
+        self.cancel_drag()
         self.screen = "editor" if self.screen == "viewer" else "viewer"
         self.player.select(self.animation_index)
         self.frame_index = 0
 
     def select_frame(self, step):
+        self.cancel_drag()
         self.frame_index = (self.frame_index + step) % len(self.animation.frames)
 
     def add_frame(self):
+        self.cancel_drag()
         self.animation.frames.insert(self.frame_index + 1, Frame())
         self.frame_index += 1
         self.player.select(self.animation_index)
 
     def remove_frame(self):
+        self.cancel_drag()
         if len(self.animation.frames) == 1:
             self.animation.frames[0] = Frame()
         else:
@@ -306,6 +322,49 @@ class App:
         self.button((544, 663, 125, 30), "동작 추가", self.add_animation)
         self.button((679, 663, 125, 30), "동작 제거", self.remove_animation)
         self.text(40, 628, f"{self.animation.name} / 프레임 {self.frame_index + 1}/{len(self.animation.frames)}")
+        self.button((40, 584, 230, 30), f"[{'x' if self.region_mode else ' '}] 영역 지정 모드", self.toggle_region, self.region_mode)
+
+    def toggle_region(self):
+        self.cancel_drag()
+        self.region_mode = not self.region_mode
+
+    def cancel_drag(self):
+        self.drag = None
+        self.draft_rect = None
+
+    def source_point(self, x, y):
+        ox, oy = self.sheet_origin()
+        return (int((x - ox) // self.editor_scale), int((y - oy) // self.editor_scale))
+
+    def screen_rect(self, rect):
+        ox, oy = self.sheet_origin()
+        x, y, w, h = rect
+        return (ox + x * self.editor_scale, oy + y * self.editor_scale,
+                w * self.editor_scale, h * self.editor_scale)
+
+    def editor_down(self, button, x, y):
+        if self.screen != "editor" or not contains(VIEW, x, y):
+            return
+        point = self.source_point(x, y)
+        if button == p.SDL_BUTTON_LEFT and (self.region_mode or self.frame.rect is None):
+            if not contains((0, 0, self.image.w, self.image.h), *point):
+                return
+            self.drag = {"kind": "create", "start": point}
+            self.draft_rect = selection_rect(point, point, self.image.w, self.image.h)
+
+    def editor_motion(self, x, y):
+        if self.drag and self.drag["kind"] == "create":
+            self.draft_rect = selection_rect(self.drag["start"], self.source_point(x, y), self.image.w, self.image.h)
+
+    def editor_up(self, button, x, y):
+        if button == p.SDL_BUTTON_LEFT and self.drag:
+            self.editor_motion(x, y)
+            if self.draft_rect:
+                self.frame.rect = self.draft_rect
+                self.frame.pivot = (self.draft_rect[2] / 2, 0)
+                self.region_mode = False
+                self.status = "영역 지정 완료"
+            self.cancel_drag()
 
     def sheet_origin(self):
         return (VIEW[0] + (VIEW[2] - self.image.w * self.editor_scale) / 2 + self.editor_pan[0],
@@ -315,12 +374,21 @@ class App:
         x, y = self.sheet_origin()
         with clipped(VIEW):
             self.image.draw_to_origin(x, y, self.image.w * self.editor_scale, self.image.h * self.editor_scale)
+            rect = self.draft_rect if self.drag else self.frame.rect
+            if rect:
+                box = self.screen_rect(rect)
+                if not self.drag:
+                    rectangle(box, (61, 175, 237, 65))
+                rectangle(box, (255, 215, 64), filled=False)
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
             self.running = False
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_ESCAPE:
-            self.running = False
+            if self.drag:
+                self.cancel_drag()
+            else:
+                self.running = False
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_TAB:
             self.toggle_screen()
         elif event.type == p.SDL_KEYDOWN and event.key in (p.SDLK_LEFT, p.SDLK_RIGHT):
@@ -333,11 +401,18 @@ class App:
             mx, my = p.c_int(), p.c_int()
             p.SDL_GetMouseState(p.ctypes.byref(mx), p.ctypes.byref(my))
             self.handle_wheel(event.x, event.y, mx.value, HEIGHT - 1 - my.value)
-        elif event.type == p.SDL_MOUSEBUTTONDOWN and event.button == p.SDL_BUTTON_LEFT:
-            for box, action in self.buttons:
-                if contains(box, event.x, HEIGHT - 1 - event.y):
-                    action()
-                    break
+        elif event.type == p.SDL_MOUSEBUTTONDOWN:
+            x, y = event.x, HEIGHT - 1 - event.y
+            if event.button == p.SDL_BUTTON_LEFT:
+                for box, action in self.buttons:
+                    if contains(box, x, y):
+                        action()
+                        return
+            self.editor_down(event.button, x, y)
+        elif event.type == p.SDL_MOUSEMOTION:
+            self.editor_motion(event.x, HEIGHT - 1 - event.y)
+        elif event.type == p.SDL_MOUSEBUTTONUP:
+            self.editor_up(event.button, event.x, HEIGHT - 1 - event.y)
 
     def draw(self):
         self.buttons = []
@@ -385,6 +460,7 @@ def main():
         p.close_canvas()
         raise RuntimeError("화면 렌더러를 만들 수 없어.")
     p.hide_lattice()
+    p.SDL_SetRenderDrawBlendMode(p.renderer, p.SDL_BLENDMODE_BLEND)
     try:
         app = App()
         previous = time.perf_counter()
