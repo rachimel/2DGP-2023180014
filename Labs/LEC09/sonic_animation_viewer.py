@@ -8,11 +8,30 @@ import pico2d as p
 
 BASE_DIR = Path(__file__).resolve().parent
 WIDTH, HEIGHT = 1100, 760
+VIEW = (24, 202, 1052, 450)
+THUMBNAILS = (24, 60, 1052, 122)
+BG = (19, 24, 34)
+PANEL = (29, 37, 50)
+TEXT = (223, 230, 242)
+
+
+def contains(box, x, y):
+    left, bottom, width, height = box
+    return left <= x < left + width and bottom <= y < bottom + height
+
+
+def rectangle(box, color, filled=True):
+    x, y, w, h = box
+    p.draw_rectangle(x, y, x + w - 1, y + h - 1, *color, filled=filled)
 
 
 class App:
     def __init__(self):
         self.running = True
+        self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
+
+    def text(self, x, y, value, color=TEXT):
+        self.font.draw(x, y, value, color)
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
@@ -22,6 +41,11 @@ class App:
 
     def draw(self):
         p.clear_canvas()
+        rectangle((0, 0, WIDTH, HEIGHT), BG)
+        rectangle(VIEW, PANEL)
+        rectangle(THUMBNAILS, PANEL)
+        self.text(24, 724, "SONIC / ANIMATION VIEWER")
+        self.text(24, 32, "ESC: 종료")
 
     def update(self, dt):
         pass
