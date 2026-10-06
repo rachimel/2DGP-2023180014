@@ -194,6 +194,7 @@ class App:
         self.region_mode = False
         self.drag = None
         self.draft_rect = None
+        self.onion = True
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -330,12 +331,44 @@ class App:
         self.button((404, 663, 130, 30), "프레임 제거", self.remove_frame)
         self.button((544, 663, 125, 30), "동작 추가", self.add_animation)
         self.button((679, 663, 125, 30), "동작 제거", self.remove_animation)
+        self.button((814, 663, 262, 30), f"어니언 스킨: {'ON' if self.onion else 'OFF'}", self.toggle_onion, self.onion)
         self.text(40, 628, f"{self.animation.name} / 프레임 {self.frame_index + 1}/{len(self.animation.frames)}")
         self.button((40, 584, 230, 30), f"[{'x' if self.region_mode else ' '}] 영역 지정 모드", self.toggle_region, self.region_mode)
 
     def toggle_region(self):
         self.cancel_drag()
         self.region_mode = not self.region_mode
+
+    def toggle_onion(self):
+        self.onion = not self.onion
+
+    def draw_onion(self):
+        if not self.onion:
+            return
+        for index, color in ((self.frame_index - 1, (240, 133, 110)),
+                             (self.frame_index + 1, (119, 202, 168))):
+            if not 0 <= index < len(self.animation.frames):
+                continue
+            frame = self.animation.frames[index]
+            if frame.rect:
+                box = self.screen_rect(frame.rect)
+                rectangle(box, (*color, 45))
+                rectangle(box, (*color, 110), filled=False)
+
+    def draw_editor_preview(self):
+        box = (40, 242, 248, 232)
+        rectangle(box, (24, 30, 42))
+        with clipped(box):
+            if self.onion:
+                self.image.opacify(0.25)
+                try:
+                    for index in (self.frame_index - 1, self.frame_index + 1):
+                        if 0 <= index < len(self.animation.frames):
+                            self.draw_frame(self.animation.frames[index], 164, 288, 3)
+                finally:
+                    self.image.opacify(1.0)
+            self.draw_frame(self.frame, 164, 288, 3)
+        self.text(54, 449, "피봇 기준 미리보기")
 
     def cancel_drag(self):
         self.drag = None
@@ -416,6 +449,7 @@ class App:
         x, y = self.sheet_origin()
         with clipped(VIEW):
             self.image.draw_to_origin(x, y, self.image.w * self.editor_scale, self.image.h * self.editor_scale)
+            self.draw_onion()
             rect = self.draft_rect if self.drag and self.drag["kind"] != "pan" else self.frame.rect
             if rect:
                 box = self.screen_rect(rect)
@@ -427,6 +461,7 @@ class App:
                 cx, cy = x + (rx + px) * self.editor_scale, y + (ry + py) * self.editor_scale
                 p.draw_line(cx - 7, cy, cx + 7, cy, 255, 126, 97)
                 p.draw_line(cx, cy - 7, cx, cy + 7, 255, 126, 97)
+        self.draw_editor_preview()
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
