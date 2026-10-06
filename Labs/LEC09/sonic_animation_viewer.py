@@ -271,6 +271,7 @@ class Game:
     HALF_WIDTH, HEIGHT = 20, 58
     WORLD_WIDTH, GOAL_X = 2600, 2470
     GROUND_FRICTION = 780
+    MAX_MOVE_SPEED = 540
     RUN_THRESHOLDS = (220, 280)
 
     def __init__(self, project):
@@ -361,7 +362,7 @@ class Game:
             self.vx = 0
         elif self.dash_time <= 0:
             if direction:
-                self.vx = max(-360, min(360, self.vx + direction * 360 * dt))
+                self.vx = max(-self.MAX_MOVE_SPEED, min(self.MAX_MOVE_SPEED, self.vx + direction * 360 * dt))
             else:
                 friction = self.GROUND_FRICTION if self.grounded else 520
                 self.vx = math.copysign(max(0, abs(self.vx) - friction * dt), self.vx)
