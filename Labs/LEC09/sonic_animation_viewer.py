@@ -9,6 +9,7 @@ import pico2d.pico2d as p
 
 BASE_DIR = Path(__file__).resolve().parent
 WIDTH, HEIGHT = 1100, 760
+FPS = 60
 VIEW = (24, 202, 1052, 450)
 THUMBNAILS = (24, 60, 1052, 122)
 BG = (19, 24, 34)
@@ -158,7 +159,7 @@ class App:
 
     def update(self, dt):
         self.elapsed += dt
-        self.frame_index = int(self.elapsed * 8) % len(self.animation.frames)
+        self.frame_index = int(self.elapsed * FPS) % len(self.animation.frames)
 
 
 def main():
@@ -187,7 +188,7 @@ def main():
             count += 1
             if args.smoke and count >= args.smoke:
                 break
-            p.delay(max(0, 1 / 60 - (time.perf_counter() - start)))
+            p.delay(max(0, 1 / FPS - (time.perf_counter() - start)))
     finally:
         p.close_canvas()
 
