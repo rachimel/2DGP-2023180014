@@ -231,6 +231,9 @@ class App:
                 self.project = new_project(self.image_path)
                 self.player = Player(self.project)
                 self.animation_index = self.frame_index = 0
+                self.cancel_drag()
+                self.editor_scale = min((VIEW[2] - 40) / image.w, (VIEW[3] - 40) / image.h)
+                self.editor_pan = [0.0, 0.0]
                 self.status = f"이미지: {self.image_path.name}"
         except (OSError, RuntimeError, ValueError) as error:
             self.status = f"이미지 불러오기 실패: {error}"
@@ -352,6 +355,12 @@ class App:
         if self.screen != "editor" or not contains(VIEW, x, y):
             return
         point = self.source_point(x, y)
+        if button == p.SDL_BUTTON_RIGHT and self.frame.rect:
+            self.cancel_drag()
+            rx, ry, w, h = self.frame.rect
+            self.frame.pivot = (max(0, min(w, point[0] - rx)), max(0, min(h, point[1] - ry)))
+            self.status = f"피봇 설정: {self.frame.pivot}"
+            return
         if button == p.SDL_BUTTON_MIDDLE:
             self.drag = {"kind": "pan", "start": (x, y), "pan": self.editor_pan.copy()}
             return
@@ -413,6 +422,11 @@ class App:
                 if not self.drag:
                     rectangle(box, (61, 175, 237, 65))
                 rectangle(box, (255, 215, 64), filled=False)
+                rx, ry, _, _ = rect
+                px, py = self.frame.pivot
+                cx, cy = x + (rx + px) * self.editor_scale, y + (ry + py) * self.editor_scale
+                p.draw_line(cx - 7, cy, cx + 7, cy, 255, 126, 97)
+                p.draw_line(cx, cy - 7, cx, cy + 7, 255, 126, 97)
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
@@ -475,6 +489,10 @@ class App:
             self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
             self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
         self.text(24, 32, self.status)
+        help_text = ("Tab 전환 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
+                     if self.screen == "editor" else
+                     "미리보기 휠/클릭 선택 · 재생 화면 휠 확대/축소 · 좌우 휠 이동 · ←/→ 동작 선택")
+        self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
         if self.screen == "editor":
