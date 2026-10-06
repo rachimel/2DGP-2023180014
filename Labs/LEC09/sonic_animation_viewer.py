@@ -138,6 +138,12 @@ def selection_rect(start, end, width, height):
     return (min(ax, bx), min(ay, by), abs(ax - bx) + 1, abs(ay - by) + 1)
 
 
+def moved_rect(rect, dx, dy, width, height):
+    x, y, w, h = rect
+    return (max(0, min(width - w, x + int(dx))),
+            max(0, min(height - h, y + int(dy))), w, h)
+
+
 def rectangle(box, color, filled=True):
     x, y, w, h = box
     p.draw_rectangle(x, y, x + w - 1, y + h - 1, *color, filled=filled)
@@ -346,25 +352,52 @@ class App:
         if self.screen != "editor" or not contains(VIEW, x, y):
             return
         point = self.source_point(x, y)
+        if button == p.SDL_BUTTON_MIDDLE:
+            self.drag = {"kind": "pan", "start": (x, y), "pan": self.editor_pan.copy()}
+            return
         if button == p.SDL_BUTTON_LEFT and (self.region_mode or self.frame.rect is None):
             if not contains((0, 0, self.image.w, self.image.h), *point):
                 return
             self.drag = {"kind": "create", "start": point}
             self.draft_rect = selection_rect(point, point, self.image.w, self.image.h)
+        elif button == p.SDL_BUTTON_LEFT and self.frame.rect and contains(self.frame.rect, *point):
+            self.drag = {"kind": "move", "start": point, "rect": self.frame.rect}
+            self.draft_rect = self.frame.rect
 
     def editor_motion(self, x, y):
         if self.drag and self.drag["kind"] == "create":
             self.draft_rect = selection_rect(self.drag["start"], self.source_point(x, y), self.image.w, self.image.h)
+        elif self.drag and self.drag["kind"] == "move":
+            sx, sy = self.drag["start"]
+            px, py = self.source_point(x, y)
+            self.draft_rect = moved_rect(self.drag["rect"], px - sx, py - sy, self.image.w, self.image.h)
+        elif self.drag and self.drag["kind"] == "pan":
+            sx, sy = self.drag["start"]
+            ox, oy = self.drag["pan"]
+            self.editor_pan = [ox + x - sx, oy + y - sy]
 
     def editor_up(self, button, x, y):
+        if button == p.SDL_BUTTON_MIDDLE and self.drag and self.drag["kind"] == "pan":
+            self.editor_motion(x, y)
+            self.cancel_drag()
+            return
         if button == p.SDL_BUTTON_LEFT and self.drag:
+            if self.drag["kind"] == "pan":
+                return
             self.editor_motion(x, y)
             if self.draft_rect:
                 self.frame.rect = self.draft_rect
-                self.frame.pivot = (self.draft_rect[2] / 2, 0)
+                if self.drag["kind"] == "create":
+                    self.frame.pivot = (self.draft_rect[2] / 2, 0)
                 self.region_mode = False
                 self.status = "영역 지정 완료"
             self.cancel_drag()
+
+    def remove_region(self):
+        self.cancel_drag()
+        self.frame.rect = None
+        self.frame.pivot = (0.0, 0.0)
+        self.status = "현재 프레임의 참조 영역 제거 완료"
 
     def sheet_origin(self):
         return (VIEW[0] + (VIEW[2] - self.image.w * self.editor_scale) / 2 + self.editor_pan[0],
@@ -374,7 +407,7 @@ class App:
         x, y = self.sheet_origin()
         with clipped(VIEW):
             self.image.draw_to_origin(x, y, self.image.w * self.editor_scale, self.image.h * self.editor_scale)
-            rect = self.draft_rect if self.drag else self.frame.rect
+            rect = self.draft_rect if self.drag and self.drag["kind"] != "pan" else self.frame.rect
             if rect:
                 box = self.screen_rect(rect)
                 if not self.drag:
@@ -391,6 +424,8 @@ class App:
                 self.running = False
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_TAB:
             self.toggle_screen()
+        elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_DELETE and self.screen == "editor":
+            self.remove_region()
         elif event.type == p.SDL_KEYDOWN and event.key in (p.SDLK_LEFT, p.SDLK_RIGHT):
             step = 1 if event.key == p.SDLK_RIGHT else -1
             if self.screen == "editor":
