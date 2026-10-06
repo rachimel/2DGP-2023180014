@@ -13,6 +13,7 @@ from contextlib import contextmanager
 import pico2d.pico2d as p
 
 BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_PROJECT = BASE_DIR / "sonic_animations.json"
 WIDTH, HEIGHT = 1100, 760
 DEFAULT_FPS = 60
 DISPLAY_FPS = 60
@@ -27,12 +28,6 @@ EVENT_SEARCH = (802, 579, 260, 28)
 EVENT_LIST = (802, 473, 260, 100)
 ANIMATION_SEARCH = (802, 395, 260, 28)
 ANIMATION_LIST = (802, 249, 260, 140)
-# 플레이 이벤트 -> 애니메이션 이름. 행 번호 대신 문자열로 연결한다.
-EVENT_ANIMATIONS = {"start": "동작 09", "idle": "동작 08", "walk": "동작 01",
-                    "run_1": "동작 02", "run_2": "동작 02", "run_3": "동작 02",
-                    "charge": "동작 04", "dash": "동작 03", "jump": "동작 05",
-                    "spring_jump": "동작 05", "fall": "동작 05",
-                    "brake": "동작 06", "hurt": "동작 07", "goal": "동작 10"}
 ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run_1": "달리기 1단계",
                "run_2": "달리기 2단계", "run_3": "달리기 3단계", "charge": "스핀 충전",
                "dash": "대시", "jump": "점프 상승", "spring_jump": "스프링 점프", "fall": "하강",
@@ -40,21 +35,6 @@ ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run_1": "
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
 TEXT = (223, 230, 242)
-
-# LEC08에서 직접 지정한 Sonic 프레임 좌표. 외부 JSON 없이 실행한다.
-DEFAULT_ROWS = (
-    ((1,447,29,39,18),(31,447,26,38,14.5),(58,447,28,39,17),(86,447,30,38,17.5),(118,447,30,38,17.5),(150,447,30,38,13.5),(182,447,29,38,11.5),(211,448,29,38,18),(240,448,29,38,18),(270,448,24,32,12),(302,448,29,26,13)),
-    ((8,408,26,37,13),(37,408,27,37,13.5),(65,407,31,38,15.5),(97,408,37,37,18.5),(135,410,32,35,16),(170,408,32,38,16),(206,408,26,38,13),(238,408,24,37,12),(263,408,30,37,15),(295,408,36,37,18),(334,409,32,36,16),(370,408,29,38,14.5)),
-    ((1,361,33,40,16.5),(39,362,35,39,17.5),(89,362,35,38,17.5),(130,362,34,40,17),(181,362,34,40,17),(228,363,33,39,16.5)),
-    ((1,326,29,30,14.5),(35,327,29,31,14.5),(67,327,30,29,15),(98,327,31,29,15.5),(131,327,29,30,14.5),(162,326,29,31,14.5),(193,326,30,29,15),(230,326,31,29,15.5),(268,325,30,30,15)),
-    ((1,292,30,27,15),(36,292,29,27,14.5),(70,292,29,27,14.5),(105,292,29,27,14.5),(139,292,29,27,14.5),(174,292,29,27,14.5)),
-    ((1,251,29,35,14.5),(36,251,30,35,15),(74,251,31,35,15.5),(111,251,31,36,15.5),(149,251,30,35,15),(186,251,31,36,15.5)),
-    ((1,207,29,35,14.5),(36,207,30,35,15),(72,208,39,31,19.5),(123,208,39,32,19.5),(172,208,39,31,19.5),(218,208,38,32,19)),
-    ((1,154,24,45,12),(31,154,29,44,14.5),(65,154,20,44,10),(90,155,25,43,12.5),(119,155,25,43,12.5),(149,154,20,44,10),(184,156,40,28,20),(232,157,39,27,19.5)),
-    ((1,108,27,38,13.5),(31,110,31,36,15.5),(64,110,31,36,15.5),(99,110,33,38,16.5),(136,110,32,36,16),(176,110,33,36,16.5),(217,110,33,36,16.5),(254,111,33,36,16.5)),
-    ((6,56,34,40,17),(49,56,34,43,17),(96,59,23,39,11.5),(125,59,23,39,11.5)),
-)
-
 
 @dataclass
 class Frame:
@@ -67,23 +47,24 @@ class Frame:
 class Animation:
     name: str
     frames: list = field(default_factory=lambda: [Frame()])
+    fps: float = DEFAULT_FPS
 
 
 @dataclass
 class Project:
     image_path: Path
     animations: list
-    fps: float = DEFAULT_FPS
     event_bindings: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        legacy_run = self.event_bindings.pop("run", EVENT_ANIMATIONS["run_1"])
-        for event in ("run_1", "run_2", "run_3"):
-            self.event_bindings.setdefault(event, legacy_run)
+        legacy_run = self.event_bindings.pop("run", "")
+        if legacy_run:
+            for event in ("run_1", "run_2", "run_3"):
+                self.event_bindings.setdefault(event, legacy_run)
         for event in ("spring_jump", "fall"):
-            self.event_bindings.setdefault(event, self.event_bindings.get("jump", EVENT_ANIMATIONS[event]))
-        for event, name in EVENT_ANIMATIONS.items():
-            self.event_bindings.setdefault(event, name)
+            self.event_bindings.setdefault(event, self.event_bindings.get("jump", ""))
+        for event in ROLE_LABELS:
+            self.event_bindings.setdefault(event, "")
 
     def role_animation(self, role):
         name = self.event_bindings[role]
@@ -91,12 +72,7 @@ class Project:
 
 
 def new_project(image_path):
-    if image_path.resolve() == (BASE_DIR / "sonic-sprite.png").resolve():
-        animations = [Animation(f"동작 {i + 1:02}", [Frame(tuple(row[:4]), (row[4], 0)) for row in rows])
-                      for i, rows in enumerate(DEFAULT_ROWS)]
-    else:
-        animations = [Animation("동작 01")]
-    return Project(image_path, animations)
+    return Project(image_path, [Animation("동작 01")])
 
 
 def project_document(project, image_size, target):
@@ -105,11 +81,11 @@ def project_document(project, image_size, target):
     except ValueError:
         image_reference = project.image_path.as_posix()
     return {
-        "version": 1, "fps": project.fps, "coordinates": "bottom-left",
+        "version": 1, "coordinates": "bottom-left",
         "image": {"path": image_reference, "size": list(image_size)},
         "event_bindings": dict(project.event_bindings),
         "animations": [
-            {"name": animation.name, "frames": [
+            {"name": animation.name, "fps": animation.fps, "frames": [
                 {"rect": list(frame.rect) if frame.rect else None, "pivot": list(frame.pivot)}
                 for frame in animation.frames]}
             for animation in project.animations],
@@ -147,7 +123,7 @@ def validated_fps(value):
 def parse_project(document, source):
     require(isinstance(document, dict), "JSON 최상위는 객체여야 해.")
     require(document.get("version") == 1, "지원하지 않는 JSON 버전이야.")
-    fps = validated_fps(document.get("fps"))
+    legacy_fps = validated_fps(document.get("fps", DEFAULT_FPS))
     require(document.get("coordinates") == "bottom-left", "좌표 기준이 일치하지 않아.")
     image = document.get("image")
     require(isinstance(image, dict), "이미지 정보가 없어.")
@@ -173,7 +149,7 @@ def parse_project(document, source):
             require(isinstance(pivot, list) and len(pivot) == 2 and
                     all(type(n) in (int, float) and math.isfinite(n) for n in pivot), "피봇 좌표가 잘못됐어.")
             frames.append(Frame(tuple(rect) if rect else None, tuple(pivot)))
-        animations.append(Animation(name, frames))
+        animations.append(Animation(name, frames, validated_fps(row.get("fps", legacy_fps))))
     image_path = Path(reference)
     if not image_path.is_absolute():
         image_path = Path(source).resolve().parent / image_path
@@ -184,9 +160,9 @@ def parse_project(document, source):
         if "event_bindings" not in document:
             require(type(name) is int and 0 <= name < len(animations), "이전 플레이 동작 연결이 잘못됐어.")
             name = animations[name].name
-        require((role in EVENT_ANIMATIONS or role == "run") and isinstance(name, str) and bool(name.strip()), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 해.")
+        require((role in ROLE_LABELS or role == "run") and isinstance(name, str), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 해.")
         roles[role] = name
-    return Project(image_path.resolve(), animations, fps, roles), tuple(size)
+    return Project(image_path.resolve(), animations, roles), tuple(size)
 
 
 def import_project(source):
@@ -215,8 +191,12 @@ class Player:
         # 현재 프레임의 진행률과 1초 대기의 남은 시간을 보존한다.
         play_elapsed = min(self.elapsed, self.play_duration)
         wait_elapsed = max(0, self.elapsed - self.play_duration)
-        self.elapsed = play_elapsed * self.project.fps / value + wait_elapsed
-        self.project.fps = value
+        self.elapsed = play_elapsed * self.animation.fps / value + wait_elapsed
+        self.animation.fps = value
+
+    @property
+    def animation(self):
+        return self.project.animations[self.index]
 
     def move_animation(self, source, target, after=False):
         animations = self.project.animations
@@ -238,7 +218,7 @@ class Player:
 
     @property
     def completed_cycles(self):
-        return min(int((self.elapsed + 1e-10) * self.project.fps / self.frame_count), self.repetitions)
+        return min(int((self.elapsed + 1e-10) * self.animation.fps / self.frame_count), self.repetitions)
 
     @property
     def repetitions(self):
@@ -246,7 +226,7 @@ class Player:
 
     @property
     def play_duration(self):
-        return self.frame_count * self.repetitions / self.project.fps
+        return self.frame_count * self.repetitions / self.animation.fps
 
     @property
     def duration(self):
@@ -260,14 +240,14 @@ class Player:
     def frame_index(self):
         if self.elapsed + 1e-10 >= self.play_duration:
             return self.frame_count - 1
-        return int((self.elapsed + 1e-10) * self.project.fps) % self.frame_count
+        return int((self.elapsed + 1e-10) * self.animation.fps) % self.frame_count
 
     def update(self, dt):
         if self.finished:
             return
         self.elapsed += max(0, dt)
         if self.loop:
-            period = sum(len(a.frames) * self.repetitions / self.project.fps + (1 if self.repeat_five else 0)
+            period = sum(len(a.frames) * self.repetitions / a.fps + (1 if self.repeat_five else 0)
                          for a in self.project.animations)
             self.elapsed %= period
         while self.elapsed + 1e-10 >= self.duration:
@@ -316,7 +296,7 @@ class Game:
 
     @property
     def frame_index(self):
-        return int((self.elapsed + 1e-10) * self.project.fps) % len(self.animation.frames)
+        return int((self.elapsed + 1e-10) * self.animation.fps) % len(self.animation.frames)
 
     def press(self, key):
         if self.finished:
@@ -509,10 +489,11 @@ class App:
     def __init__(self):
         self.running = True
         self.buttons = []
-        self.status = "이미지 열기로 스프라이트 시트를 불러올 수 있어."
-        self.image_path = BASE_DIR / "sonic-sprite.png"
+        self.status = "기본 sonic_animations.json 설정을 불러왔어."
+        self.project, image_size = import_project(DEFAULT_PROJECT)
+        self.image_path = self.project.image_path
         self.image = p.load_image(str(self.image_path))
-        self.project = new_project(self.image_path)
+        require((self.image.w, self.image.h) == image_size, "기본 JSON의 이미지 크기가 원본과 달라.")
         self.animation_index = 0
         self.frame_index = 0
         self.player = Player(self.project)
@@ -529,10 +510,11 @@ class App:
         self.grid = True
         self.grid_size = 8
         self.mouse_position = (-1, -1)
-        self.json_path = None
+        self.json_path = DEFAULT_PROJECT
         self.fps_editing = False
         self.fps_select_all = False
-        self.fps_text = f"{self.project.fps:g}"
+        self.fps_text = f"{self.animation.fps:g}"
+        self.fps_target = None
         self.game = Game(self.project)
         self.play_paused = False
         self.binding_event = "start"
@@ -552,6 +534,18 @@ class App:
     @property
     def frame(self):
         return self.animation.frames[self.frame_index]
+
+    @property
+    def speed_animation(self):
+        if self.screen == "play":
+            return self.project.role_animation(self.binding_event)
+        return self.animation
+
+    @property
+    def speed_boxes(self):
+        if self.screen == "editor":
+            return (40, 208, 140, 26), (184, 208, 104, 26)
+        return SPEED_INPUT, SPEED_APPLY
 
     def draw_frame(self, frame, x, y, scale, flip=False):
         if frame.rect is None:
@@ -644,28 +638,36 @@ class App:
         self.game.stop_input()
         self.fps_editing = True
         self.fps_select_all = True
-        self.fps_text = f"{self.project.fps:g}"
+        self.fps_target = self.speed_animation
+        self.fps_text = f"{self.fps_target.fps:g}"
 
     def cancel_fps_edit(self):
         self.fps_editing = False
         self.fps_select_all = False
-        self.fps_text = f"{self.project.fps:g}"
+        self.fps_target = None
+        self.fps_text = f"{self.speed_animation.fps:g}"
 
     def apply_fps(self):
-        old_fps = self.project.fps
+        target = self.fps_target or self.speed_animation
+        old_fps = target.fps
         try:
-            self.player.set_fps(float(self.fps_text))
+            value = validated_fps(float(self.fps_text) if self.fps_editing else target.fps)
         except ValueError:
             self.fps_editing = True
             self.status = "재생 속도는 0.1~240fps 사이의 숫자로 입력해."
             return
-        if self.screen == "play":
-            self.game.elapsed *= old_fps / self.project.fps
-            self.sync_game()
+        if self.player.animation is target:
+            self.player.set_fps(value)
         else:
+            target.fps = value
+        if self.screen == "play":
+            if self.game.animation is target:
+                self.game.elapsed *= old_fps / value
+            self.sync_game()
+        elif self.screen == "viewer":
             self.frame_index = self.player.frame_index
         self.cancel_fps_edit()
-        self.status = f"재생 속도 적용: {self.project.fps:g}fps"
+        self.status = f"{target.name} 재생 속도 적용: {value:g}fps"
 
     def handle_fps_key(self, key):
         if key in (p.SDLK_RETURN, p.SDLK_KP_ENTER):
@@ -689,17 +691,22 @@ class App:
                 self.fps_select_all = False
 
     def draw_speed_control(self):
-        self.text(516, 675, "FPS")
-        rectangle(SPEED_INPUT, (15, 20, 29))
-        rectangle(SPEED_INPUT, (255, 215, 64) if self.fps_editing else (86, 103, 124), filled=False)
-        x, y, w, h = SPEED_INPUT
+        input_box, apply_box = self.speed_boxes
+        if self.screen == "editor":
+            self.text(40, 238, f"동작 속도: {self.speed_animation.name[:7]}")
+        else:
+            self.text(516, 675, "FPS")
+        rectangle(input_box, (15, 20, 29))
+        rectangle(input_box, (255, 215, 64) if self.fps_editing else (86, 103, 124), filled=False)
+        x, y, w, h = input_box
         if self.fps_editing and self.fps_select_all:
             rectangle((x + 7, y + 5, max(8, len(self.fps_text) * 9), 21), (62, 93, 132))
-        value = self.fps_text if self.fps_editing else f"{self.project.fps:g}"
+        value = self.fps_text if self.fps_editing else f"{self.speed_animation.fps:g}"
         self.text(x + 9, y + h / 2 - 5, value + ("_" if self.fps_editing and not self.fps_select_all else ""))
-        self.buttons.append((SPEED_INPUT, self.start_fps_edit))
-        self.button(SPEED_APPLY, "적용", self.apply_fps, self.fps_editing)
-        self.text(812, 675, "0.1~240fps · Enter 적용", (153, 171, 196))
+        self.buttons.append((input_box, self.start_fps_edit))
+        self.button(apply_box, "적용", self.apply_fps, self.fps_editing)
+        if self.screen != "editor":
+            self.text(812, 675, f"{self.speed_animation.name[:7]} · Enter 적용", (153, 171, 196))
 
     def toggle_loop(self):
         self.player.loop = not self.player.loop
@@ -864,7 +871,7 @@ class App:
     def search_results(self, kind):
         query = self.search_queries[kind].strip().casefold()
         if kind == "event":
-            return [e for e in EVENT_ANIMATIONS if query in f"{e} {ROLE_LABELS[e]} {self.project.event_bindings[e]}".casefold()]
+            return [e for e in ROLE_LABELS if query in f"{e} {ROLE_LABELS[e]} {self.project.event_bindings[e]}".casefold()]
         return [a.name for a in self.project.animations if query in a.name.casefold()]
 
     def focus_search(self, kind):
@@ -881,6 +888,7 @@ class App:
             p.SDL_StopTextInput()
 
     def choose_binding_event(self, event):
+        self.cancel_fps_edit()
         self.binding_event = event
 
     def bind_animation(self, name):
@@ -958,7 +966,7 @@ class App:
                 else:
                     rectangle((sx(game.x) - 20, PLAY_Y + game.y, 40, 58), (83, 150, 247))
         self.text(40, 628, f"PLAY / {ROLE_LABELS[game.state]} / {self.animation.name}")
-        self.text(40, 600, f"이동 속도 {abs(game.vx):.0f} · 피격 {game.hits}회 · {self.project.fps:g}fps")
+        self.text(40, 600, f"이동 속도 {abs(game.vx):.0f} · 피격 {game.hits}회 · {game.animation.fps:g}fps")
         if game.finished:
             self.text(40, 572, "골 도착! R 또는 다시 시작으로 재도전", (255, 215, 64))
         elif game.charging:
@@ -996,6 +1004,7 @@ class App:
         self.select_animation(min(self.animation_index, len(self.project.animations) - 1))
 
     def draw_editor_controls(self):
+        self.draw_speed_control()
         self.button((24, 663, 110, 30), "이전 프레임", lambda: self.select_frame(-1))
         self.button((144, 663, 110, 30), "다음 프레임", lambda: self.select_frame(1))
         self.button((264, 663, 130, 30), "프레임 추가", self.add_frame)
@@ -1076,7 +1085,7 @@ class App:
                 rectangle(box, (*color, 110), filled=False)
 
     def draw_editor_preview(self):
-        box = (40, 242, 248, 232)
+        box = (40, 252, 248, 222)
         rectangle(box, (24, 30, 42))
         with clipped(box):
             if self.onion:
@@ -1251,7 +1260,8 @@ class App:
             self.handle_wheel(event.x, event.y, mx.value, HEIGHT - 1 - my.value)
         elif event.type == p.SDL_MOUSEBUTTONDOWN:
             x, y = event.x, HEIGHT - 1 - event.y
-            if self.fps_editing and not contains(SPEED_INPUT, x, y) and not contains(SPEED_APPLY, x, y):
+            input_box, apply_box = self.speed_boxes
+            if self.fps_editing and not contains(input_box, x, y) and not contains(apply_box, x, y):
                 self.cancel_fps_edit()
             if event.button == p.SDL_BUTTON_LEFT:
                 index = self.hit_thumbnail(x, y) if self.screen != "play" else None
@@ -1293,7 +1303,7 @@ class App:
                 p.draw_line(250, 332, 850, 332, 64, 81, 101)
                 self.draw_frame(self.frame, WIDTH / 2 + self.view_pan, 332, self.view_scale)
             self.text(40, 628, self.animation.name)
-            self.text(40, 600, f"{self.project.fps:g}fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
+            self.text(40, 600, f"{self.animation.fps:g}fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
             if self.player.waiting:
                 self.text(40, 572, "1초 대기 중", (255, 209, 91))
             elif self.player.finished:
@@ -1327,7 +1337,7 @@ class App:
         self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
-        if self.search_focus:
+        if self.search_focus or self.fps_editing:
             return
         if self.screen == "editor" or self.thumbnail_drag:
             return
