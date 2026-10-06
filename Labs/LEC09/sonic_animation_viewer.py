@@ -310,6 +310,15 @@ class App:
         self.text(x + 9, y + h / 2 - 5, label)
         self.buttons.append((box, action))
 
+    def tab(self, box, label, screen):
+        active = self.screen == screen
+        rectangle(box, PANEL if active else (24, 30, 42))
+        x, y, w, h = box
+        self.text(x + w / 2 - 16, y + h / 2 - 5, label)
+        if active:
+            rectangle((x, y, w, 3), (255, 215, 64))
+        self.buttons.append((box, lambda: self.set_screen(screen)))
+
     def open_image(self):
         try:
             path = file_dialog(title="스프라이트 이미지 열기", filetypes=[("이미지", "*.png *.jpg *.bmp"), ("모든 파일", "*.*")])
@@ -413,9 +422,11 @@ class App:
                 self.editor_scale = max(0.25, min(20, self.editor_scale * factor))
                 self.editor_pan[0] += dx * 24
 
-    def toggle_screen(self):
+    def set_screen(self, screen):
+        if self.screen == screen:
+            return
         self.cancel_drag()
-        self.screen = "editor" if self.screen == "viewer" else "viewer"
+        self.screen = screen
         self.player.select(self.animation_index)
         self.frame_index = 0
 
@@ -630,8 +641,6 @@ class App:
                 self.cancel_drag()
             else:
                 self.running = False
-        elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_TAB:
-            self.toggle_screen()
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_DELETE and self.screen == "editor":
             self.remove_region()
         elif event.type == p.SDL_KEYDOWN and event.key in (p.SDLK_LEFT, p.SDLK_RIGHT):
@@ -678,11 +687,12 @@ class App:
                 self.text(40, 572, "재생 완료 · 미리보기를 선택하면 다시 재생", (255, 209, 91))
             if self.frame.rect is None:
                 self.text(40, 546, "현재 프레임의 참조 영역이 미지정 상태야.")
-        self.text(24, 724, "SONIC / ANIMATION VIEWER")
-        self.button((308, 704, 150, 36), "JSON 저장", self.save_json)
-        self.button((470, 704, 170, 36), "JSON 불러오기", self.load_json)
+        self.text(24, 724, "SONIC")
+        self.tab((100, 704, 110, 36), "뷰어", "viewer")
+        self.tab((220, 704, 110, 36), "편집", "editor")
+        self.button((390, 704, 150, 36), "JSON 저장", self.save_json)
+        self.button((552, 704, 170, 36), "JSON 불러오기", self.load_json)
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
-        self.button((704, 704, 184, 36), "뷰어 / 편집 [Tab]", self.toggle_screen, self.screen == "editor")
         if self.screen == "editor":
             self.draw_editor_controls()
         else:
@@ -690,7 +700,7 @@ class App:
             self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
         with clipped((24, 20, WIDTH - 48, 34)):
             self.text(24, 32, self.status)
-        help_text = ("Tab 전환 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
+        help_text = ("상단 탭으로 화면 전환 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
                      if self.screen == "editor" else
                      "미리보기 휠/클릭 선택 · 재생 화면 휠 확대/축소 · 좌우 휠 이동 · Left/Right 동작 선택")
         self.text(24, 10, help_text, (153, 171, 196))
