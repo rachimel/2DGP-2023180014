@@ -29,10 +29,14 @@ ANIMATION_SEARCH = (802, 395, 260, 28)
 ANIMATION_LIST = (802, 249, 260, 140)
 # 플레이 이벤트 -> 애니메이션 이름. 행 번호 대신 문자열로 연결한다.
 EVENT_ANIMATIONS = {"start": "동작 09", "idle": "동작 08", "walk": "동작 01",
-                    "run": "동작 02", "charge": "동작 04", "dash": "동작 03",
-                    "jump": "동작 05", "brake": "동작 06", "hurt": "동작 07", "goal": "동작 10"}
-ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run": "달리기", "charge": "스핀 충전",
-               "dash": "대시", "jump": "점프", "brake": "제동", "hurt": "피격", "goal": "골"}
+                    "run_1": "동작 02", "run_2": "동작 02", "run_3": "동작 02",
+                    "charge": "동작 04", "dash": "동작 03", "jump": "동작 05",
+                    "spring_jump": "동작 05", "fall": "동작 05",
+                    "brake": "동작 06", "hurt": "동작 07", "goal": "동작 10"}
+ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run_1": "달리기 1단계",
+               "run_2": "달리기 2단계", "run_3": "달리기 3단계", "charge": "스핀 충전",
+               "dash": "대시", "jump": "점프 상승", "spring_jump": "스프링 점프", "fall": "하강",
+               "brake": "제동", "hurt": "피격", "goal": "골"}
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
 TEXT = (223, 230, 242)
@@ -73,6 +77,11 @@ class Project:
     event_bindings: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        legacy_run = self.event_bindings.pop("run", EVENT_ANIMATIONS["run_1"])
+        for event in ("run_1", "run_2", "run_3"):
+            self.event_bindings.setdefault(event, legacy_run)
+        for event in ("spring_jump", "fall"):
+            self.event_bindings.setdefault(event, self.event_bindings.get("jump", EVENT_ANIMATIONS[event]))
         for event, name in EVENT_ANIMATIONS.items():
             self.event_bindings.setdefault(event, name)
 
@@ -175,7 +184,7 @@ def parse_project(document, source):
         if "event_bindings" not in document:
             require(type(name) is int and 0 <= name < len(animations), "이전 플레이 동작 연결이 잘못됐어.")
             name = animations[name].name
-        require(role in EVENT_ANIMATIONS and isinstance(name, str) and bool(name.strip()), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 해.")
+        require((role in EVENT_ANIMATIONS or role == "run") and isinstance(name, str) and bool(name.strip()), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 해.")
         roles[role] = name
     return Project(image_path.resolve(), animations, fps, roles), tuple(size)
 
@@ -278,12 +287,15 @@ class Game:
     STEP = 1 / 120
     HALF_WIDTH, HEIGHT = 20, 58
     WORLD_WIDTH, GOAL_X = 2600, 2470
+    GROUND_FRICTION = 780
+    RUN_THRESHOLDS = (220, 280, 340)
 
     def __init__(self, project):
         self.project = project
         self.x, self.y, self.vx, self.vy = 100.0, 0.0, 0.0, 0.0
         self.facing = 1
         self.grounded = True
+        self.spring_jump = False
         self.state = "start"
         self.elapsed = self.accumulator = 0.0
         self.start_time = 0.6
@@ -314,6 +326,7 @@ class Game:
             return
         if key == "jump" and self.grounded:
             self.vy, self.grounded, self.charging = 550, False, False
+            self.spring_jump = False
         elif key == "shift" and self.grounded:
             self.charging, self.charge, self.vx = True, 0.0, 0.0
 
@@ -334,6 +347,7 @@ class Game:
         self.hits += 1
         self.x, self.y, self.vx, self.vy = 100.0, 0.0, 0.0, 0.0
         self.grounded, self.charging = True, False
+        self.spring_jump = False
         self.hurt_time, self.invincible, self.dash_time = 0.5, 1.5, 0
         self.keys.clear()
 
@@ -366,7 +380,8 @@ class Game:
             if direction:
                 self.vx = max(-360, min(360, self.vx + direction * 360 * dt))
             else:
-                self.vx = math.copysign(max(0, abs(self.vx) - 520 * dt), self.vx)
+                friction = self.GROUND_FRICTION if self.grounded else 520
+                self.vx = math.copysign(max(0, abs(self.vx) - friction * dt), self.vx)
         old_x, old_y = self.x, self.y
         self.x = max(self.HALF_WIDTH, min(self.WORLD_WIDTH - self.HALF_WIDTH, self.x + self.vx * dt))
         for x, width, height in self.obstacles:
@@ -382,10 +397,13 @@ class Game:
             if self.x + self.HALF_WIDTH > x and self.x - self.HALF_WIDTH < x + width:
                 if self.vy <= 0 and old_y >= height - 0.01 and self.y <= height:
                     self.y, self.vy, self.grounded = height, 0, True
+        if self.grounded:
+            self.spring_jump = False
         for x, width in self.springs:
             if self.spring_wait <= 0 and self.y <= 12 and self.x + self.HALF_WIDTH > x and self.x - self.HALF_WIDTH < x + width:
                 self.y, self.vy, self.grounded, self.spring_wait = 12, 720, False, 0.35
                 self.charging = False
+                self.spring_jump = True
         for x, width in self.spikes:
             if self.y < 26 and self.x + self.HALF_WIDTH > x and self.x - self.HALF_WIDTH < x + width:
                 self.damage()
@@ -395,14 +413,17 @@ class Game:
                     enemy["alive"] = False
                     if self.vy < 0:
                         self.vy, self.grounded = 350, False
+                        self.spring_jump = False
                 else:
                     self.damage()
         if self.x >= self.GOAL_X and self.grounded:
             self.finished = True
             self.vx = 0
+        air_state = "fall" if self.vy < 0 else "spring_jump" if self.spring_jump else "jump"
         state = ("goal" if self.finished else "hurt" if self.hurt_time > 0 else "start" if self.start_time > 0
-                 else "charge" if self.charging else "jump" if not self.grounded else "dash" if self.dash_time > 0
-                 else "brake" if not direction and abs(self.vx) > 5 else "run" if abs(self.vx) >= 220
+                 else "charge" if self.charging else air_state if not self.grounded
+                 else "dash" if self.dash_time > 0 else "brake" if not direction and abs(self.vx) > 5
+                 else f"run_{sum(abs(self.vx) >= speed for speed in self.RUN_THRESHOLDS)}" if abs(self.vx) >= self.RUN_THRESHOLDS[0]
                  else "walk" if abs(self.vx) > 5 else "idle")
         if state != self.state:
             self.state, self.elapsed = state, 0.0
