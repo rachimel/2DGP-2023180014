@@ -91,6 +91,7 @@ class App:
         self.project = new_project(self.image_path)
         self.animation_index = 0
         self.frame_index = 0
+        self.elapsed = 0.0
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -156,7 +157,8 @@ class App:
         self.text(24, 32, self.status)
 
     def update(self, dt):
-        pass
+        self.elapsed += dt
+        self.frame_index = int(self.elapsed * 8) % len(self.animation.frames)
 
 
 def main():
