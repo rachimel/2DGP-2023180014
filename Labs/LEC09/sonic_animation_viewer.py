@@ -66,6 +66,7 @@ class Player:
         self.index = 0
         self.elapsed = 0.0
         self.finished = False
+        self.repeat_five = True
 
     def select(self, index):
         self.index = index % len(self.project.animations)
@@ -78,18 +79,36 @@ class Player:
 
     @property
     def completed_cycles(self):
-        return int((self.elapsed + 1e-10) * FPS / self.frame_count)
+        return min(int((self.elapsed + 1e-10) * FPS / self.frame_count), self.repetitions)
+
+    @property
+    def repetitions(self):
+        return 5 if self.repeat_five else 1
+
+    @property
+    def play_duration(self):
+        return self.frame_count * self.repetitions / FPS
+
+    @property
+    def duration(self):
+        return self.play_duration + (1.0 if self.repeat_five else 0.0)
+
+    @property
+    def waiting(self):
+        return self.repeat_five and self.elapsed + 1e-10 >= self.play_duration and not self.finished
 
     @property
     def frame_index(self):
-        return min(int((self.elapsed + 1e-10) * FPS), self.frame_count - 1)
+        if self.elapsed + 1e-10 >= self.play_duration:
+            return self.frame_count - 1
+        return int((self.elapsed + 1e-10) * FPS) % self.frame_count
 
     def update(self, dt):
         if self.finished:
             return
         self.elapsed += max(0, dt)
-        while self.elapsed + 1e-10 >= self.frame_count / FPS:
-            duration = self.frame_count / FPS
+        while self.elapsed + 1e-10 >= self.duration:
+            duration = self.duration
             if self.index == len(self.project.animations) - 1:
                 self.elapsed = duration
                 self.finished = True
@@ -194,6 +213,8 @@ class App:
         self.draw_frame(self.frame, WIDTH / 2, 332, 5)
         self.text(40, 628, self.animation.name)
         self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
+        if self.player.waiting:
+            self.text(40, 572, "1초 대기 중", (255, 209, 91))
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.text(24, 32, self.status)
