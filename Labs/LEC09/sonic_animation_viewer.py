@@ -4,7 +4,7 @@ from pathlib import Path
 import argparse
 import time
 
-import pico2d as p
+import pico2d.pico2d as p
 
 BASE_DIR = Path(__file__).resolve().parent
 WIDTH, HEIGHT = 1100, 760
@@ -98,6 +98,11 @@ def main():
     parser.add_argument("--smoke", type=int, default=0, metavar="FRAMES")
     args = parser.parse_args()
     p.open_canvas(WIDTH, HEIGHT)
+    if not p.renderer:
+        p.renderer = p.SDL_CreateRenderer(p.window, -1, p.SDL_RENDERER_SOFTWARE)
+    if not p.renderer:
+        p.close_canvas()
+        raise RuntimeError("화면 렌더러를 만들 수 없어.")
     p.hide_lattice()
     try:
         app = App()
