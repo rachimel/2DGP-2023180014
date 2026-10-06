@@ -390,7 +390,7 @@ class App:
                 px, py = frame.pivot
                 self.draw_frame(frame, box[0] + box[2] / 2 + (px - w / 2) * scale,
                                 125 + (py - h / 2) * scale, scale)
-            self.text(box[0] + 14, 82, animation.name)
+            self.text(box[0] + 14, 82, animation.name[:7])
             self.buttons.append((box, lambda i=index: self.select_animation(i)))
 
     def select_animation(self, index):
@@ -456,8 +456,10 @@ class App:
         self.button((544, 663, 125, 30), "동작 추가", self.add_animation)
         self.button((679, 663, 125, 30), "동작 제거", self.remove_animation)
         self.button((814, 663, 262, 30), f"어니언 스킨: {'ON' if self.onion else 'OFF'}", self.toggle_onion, self.onion)
-        self.text(40, 628, f"{self.animation.name} / 프레임 {self.frame_index + 1}/{len(self.animation.frames)}")
+        self.text(40, 628, f"{self.animation.name[:6]} / 프레임 {self.frame_index + 1}/{len(self.animation.frames)}")
         self.button((40, 584, 230, 30), f"[{'x' if self.region_mode else ' '}] 영역 지정 모드", self.toggle_region, self.region_mode)
+        self.text(40, 552, f"영역: {self.frame.rect or '미지정'}")
+        self.text(40, 526, f"피봇: {self.frame.pivot}")
 
     def toggle_region(self):
         self.cancel_drag()
@@ -640,6 +642,10 @@ class App:
             self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
             if self.player.waiting:
                 self.text(40, 572, "1초 대기 중", (255, 209, 91))
+            elif self.player.finished:
+                self.text(40, 572, "재생 완료 · 미리보기를 선택하면 다시 재생", (255, 209, 91))
+            if self.frame.rect is None:
+                self.text(40, 546, "현재 프레임의 참조 영역이 미지정 상태야.")
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((308, 704, 150, 36), "JSON 저장", self.save_json)
         self.button((470, 704, 170, 36), "JSON 불러오기", self.load_json)
@@ -654,7 +660,7 @@ class App:
             self.text(24, 32, self.status)
         help_text = ("Tab 전환 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
                      if self.screen == "editor" else
-                     "미리보기 휠/클릭 선택 · 재생 화면 휠 확대/축소 · 좌우 휠 이동 · ←/→ 동작 선택")
+                     "미리보기 휠/클릭 선택 · 재생 화면 휠 확대/축소 · 좌우 휠 이동 · Left/Right 동작 선택")
         self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
@@ -669,6 +675,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--smoke", type=int, default=0, metavar="FRAMES")
     args = parser.parse_args()
+    if args.smoke < 0:
+        parser.error("--smoke 값은 0 이상이어야 해.")
     p.open_canvas(WIDTH, HEIGHT)
     if not p.renderer:
         p.renderer = p.SDL_CreateRenderer(p.window, -1, p.SDL_RENDERER_SOFTWARE)
