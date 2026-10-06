@@ -280,6 +280,7 @@ class App:
         self.drag = None
         self.draft_rect = None
         self.onion = True
+        self.grid = True
         self.json_path = None
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
@@ -460,6 +461,36 @@ class App:
         self.button((40, 584, 230, 30), f"[{'x' if self.region_mode else ' '}] 영역 지정 모드", self.toggle_region, self.region_mode)
         self.text(40, 552, f"영역: {self.frame.rect or '미지정'}")
         self.text(40, 526, f"피봇: {self.frame.pivot}")
+        self.button((40, 484, 230, 30), f"[{'x' if self.grid else ' '}] 그리드 ({self.grid_step()}px)", self.toggle_grid, self.grid)
+
+    def toggle_grid(self):
+        self.grid = not self.grid
+
+    def grid_step(self):
+        step = 1
+        while step * self.editor_scale < 8:
+            step *= 2
+        return step
+
+    def draw_grid(self):
+        if not self.grid:
+            return
+        ox, oy = self.sheet_origin()
+        scale, step = self.editor_scale, self.grid_step()
+        left, bottom, width, height = SHEET
+        # 시트 픽셀에 맞추고, 화면에 보이는 선만 그린다.
+        start_x = max(0, math.ceil((left - ox) / (scale * step)) * step)
+        end_x = min(self.image.w, math.floor((left + width - ox) / scale))
+        start_y = max(0, math.ceil((bottom - oy) / (scale * step)) * step)
+        end_y = min(self.image.h, math.floor((bottom + height - oy) / scale))
+        for ix in range(start_x, end_x + 1, step):
+            alpha = 105 if ix % (step * 8) == 0 else 55
+            p.draw_line(ox + ix * scale, oy, ox + ix * scale, oy + self.image.h * scale,
+                        140, 166, 192, alpha)
+        for iy in range(start_y, end_y + 1, step):
+            alpha = 105 if iy % (step * 8) == 0 else 55
+            p.draw_line(ox, oy + iy * scale, ox + self.image.w * scale, oy + iy * scale,
+                        140, 166, 192, alpha)
 
     def toggle_region(self):
         self.cancel_drag()
@@ -575,6 +606,7 @@ class App:
         x, y = self.sheet_origin()
         with clipped(SHEET):
             self.image.draw_to_origin(x, y, self.image.w * self.editor_scale, self.image.h * self.editor_scale)
+            self.draw_grid()
             self.draw_onion()
             rect = self.draft_rect if self.drag and self.drag["kind"] != "pan" else self.frame.rect
             if rect:
