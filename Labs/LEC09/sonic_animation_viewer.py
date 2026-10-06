@@ -22,6 +22,11 @@ THUMBNAILS = (24, 60, 1052, 122)
 SPEED_INPUT = (560, 663, 126, 30)
 SPEED_APPLY = (698, 663, 96, 30)
 PLAY_Y = 332
+GAME_VIEW = (24, 202, 750, 450)
+EVENT_SEARCH = (802, 579, 260, 28)
+EVENT_LIST = (802, 473, 260, 100)
+ANIMATION_SEARCH = (802, 395, 260, 28)
+ANIMATION_LIST = (802, 249, 260, 140)
 # 플레이 이벤트 -> 애니메이션 이름. 행 번호 대신 문자열로 연결한다.
 EVENT_ANIMATIONS = {"start": "동작 09", "idle": "동작 08", "walk": "동작 01",
                     "run": "동작 02", "charge": "동작 04", "dash": "동작 03",
@@ -453,43 +458,30 @@ def file_dialog(save=False, **options):
         root.destroy()
 
 
-def event_binding_dialog(project, initial_event):
-    """문자열 입력과 기존 이름 선택을 함께 지원하는 런타임 설정 창."""
-    import tkinter as tk
-    from tkinter import ttk
-    root = tk.Tk()
-    root.title("이벤트 연결 설정")
-    root.attributes("-topmost", True)
-    root.resizable(False, False)
-    result = None
-    event = tk.StringVar(value=initial_event)
-    name = tk.StringVar(value=project.event_bindings[initial_event])
-    error = tk.StringVar()
-    ttk.Label(root, text="이벤트").grid(row=0, column=0, padx=12, pady=12)
-    selector = ttk.Combobox(root, textvariable=event, values=list(EVENT_ANIMATIONS), state="readonly", width=28)
-    selector.grid(row=0, column=1, padx=12, pady=12)
-    selector.bind("<<ComboboxSelected>>", lambda _: name.set(project.event_bindings[event.get()]))
-    ttk.Label(root, text="애니메이션 이름").grid(row=1, column=0, padx=12, pady=8)
-    entry = ttk.Combobox(root, textvariable=name, values=[a.name for a in project.animations], width=28)
-    entry.grid(row=1, column=1, padx=12, pady=8)
-    ttk.Label(root, textvariable=error, foreground="red").grid(row=2, column=0, columnspan=2, padx=12, pady=8)
-
-    def apply():
-        nonlocal result
-        matches = sum(a.name == name.get() for a in project.animations)
-        if matches != 1:
-            error.set("목록에 있는 고유한 애니메이션 이름을 입력해.")
-            return
-        result = (event.get(), name.get())
-        root.destroy()
-
-    ttk.Button(root, text="적용", command=apply).grid(row=3, column=0, padx=12, pady=12)
-    ttk.Button(root, text="취소", command=root.destroy).grid(row=3, column=1, padx=12, pady=12)
-    root.bind("<Return>", lambda _: apply())
-    root.bind("<Escape>", lambda _: root.destroy())
-    entry.focus_set()
-    root.mainloop()
-    return result
+def app_events():
+    """pico2d 기본 이벤트에 한글 검색용 SDL 텍스트 입력을 추가한다."""
+    raw = p.SDL_Event()
+    events = []
+    while p.SDL_PollEvent(p.ctypes.byref(raw)):
+        event = p.Event(raw.type)
+        if raw.type in (p.SDL_TEXTINPUT, p.SDL_TEXTEDITING):
+            event.text = bytes(raw.text.text if raw.type == p.SDL_TEXTINPUT else raw.edit.text).decode("utf-8")
+        elif raw.type in (p.SDL_KEYDOWN, p.SDL_KEYUP):
+            if raw.key.repeat:
+                continue
+            event.key = raw.key.keysym.sym
+        elif raw.type == p.SDL_MOUSEMOTION:
+            event.x, event.y = raw.motion.x, raw.motion.y
+        elif raw.type in (p.SDL_MOUSEBUTTONDOWN, p.SDL_MOUSEBUTTONUP):
+            event.button, event.x, event.y = raw.button.button, raw.button.x, raw.button.y
+        elif raw.type == p.SDL_MOUSEWHEEL:
+            event.x, event.y = raw.wheel.x, raw.wheel.y
+            if raw.wheel.direction == p.SDL_MOUSEWHEEL_FLIPPED:
+                event.x, event.y = -event.x, -event.y
+        elif raw.type != p.SDL_QUIT:
+            continue
+        events.append(event)
+    return events
 
 
 class App:
@@ -522,7 +514,11 @@ class App:
         self.fps_text = f"{self.project.fps:g}"
         self.game = Game(self.project)
         self.play_paused = False
-        self.skip_update = False
+        self.binding_event = "start"
+        self.search_focus = None
+        self.search_queries = {"event": "", "animation": ""}
+        self.search_offsets = {"event": 0, "animation": 0}
+        self.search_composition = ""
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -623,6 +619,7 @@ class App:
         self.frame_index = 0
 
     def start_fps_edit(self):
+        self.focus_search(None)
         self.game.stop_input()
         self.fps_editing = True
         self.fps_select_all = True
@@ -777,6 +774,10 @@ class App:
 
     def handle_wheel(self, dx, dy, x, y):
         if self.screen == "play":
+            for kind, box, count in (("event", EVENT_LIST, 4), ("animation", ANIMATION_LIST, 5)):
+                if contains(box, x, y):
+                    limit = max(0, len(self.search_results(kind)) - count)
+                    self.search_offsets[kind] = max(0, min(limit, self.search_offsets[kind] - int(dy)))
             return
         if self.thumbnail_drag:
             if contains(THUMBNAILS, x, y) and dy:
@@ -806,6 +807,7 @@ class App:
         if self.screen == screen:
             return
         self.cancel_drag()
+        self.focus_search(None)
         self.cancel_fps_edit()
         self.screen = screen
         self.player.select(self.animation_index)
@@ -831,34 +833,87 @@ class App:
         self.frame_index = self.game.frame_index
 
     def draw_game_events(self):
-        self.text(34, 158, "이벤트 -> 애니메이션 · 실행 중 이름 입력/선택 · JSON 저장 가능")
-        self.button((880, 134, 176, 34), "이벤트 연결 설정", self.edit_event_binding)
+        self.text(34, 158, "오른쪽 사이드바에서 이벤트 선택 후 애니메이션 클릭 · JSON 저장 가능")
         event = self.game.state
         name = self.project.event_bindings[event]
         self.text(34, 124, f'현재 이벤트: "{event}" -> "{name}"', (255, 215, 64))
         missing = not any(a.name == name for a in self.project.animations)
         self.text(34, 90, "연결한 이름을 찾지 못해 첫 동작을 표시 중이야." if missing else "입력·충돌 이벤트에 따라 연결된 동작을 자동 재생해.")
 
-    def edit_event_binding(self):
+    def search_results(self, kind):
+        query = self.search_queries[kind].strip().casefold()
+        if kind == "event":
+            return [e for e in EVENT_ANIMATIONS if query in f"{e} {ROLE_LABELS[e]} {self.project.event_bindings[e]}".casefold()]
+        return [a.name for a in self.project.animations if query in a.name.casefold()]
+
+    def focus_search(self, kind):
+        self.search_focus = kind
+        self.search_composition = ""
+        if kind:
+            self.cancel_fps_edit()
+            self.game.stop_input()
+            box = EVENT_SEARCH if kind == "event" else ANIMATION_SEARCH
+            rect = p.SDL_Rect(int(box[0]), int(HEIGHT - box[1] - box[3]), int(box[2]), int(box[3]))
+            p.SDL_SetTextInputRect(p.ctypes.byref(rect))
+            p.SDL_StartTextInput()
+        else:
+            p.SDL_StopTextInput()
+
+    def choose_binding_event(self, event):
+        self.binding_event = event
+
+    def bind_animation(self, name):
         self.game.stop_input()
-        try:
-            result = event_binding_dialog(self.project, self.game.state)
-            if result:
-                event, name = result
-                self.project.event_bindings[event] = name
-                self.sync_game()
-                self.status = f'이벤트 "{event}" 연결 변경: "{name}" · JSON 저장으로 보관해.'
-        finally:
-            # 설정 창에서 보낸 시간을 다음 물리 업데이트에 합산하지 않는다.
-            self.skip_update = True
+        if sum(a.name == name for a in self.project.animations) != 1:
+            self.status = "동작 이름이 중복되어 있어. 고유한 이름으로 연결해야 해."
+            return
+        self.project.event_bindings[self.binding_event] = name
+        self.sync_game()
+        self.status = f'"{self.binding_event}" -> "{name}" 연결 변경 · JSON 저장으로 보관해.'
+
+    def draw_binding_sidebar(self):
+        rectangle((786, 202, 290, 450), (24, 30, 42))
+        self.text(802, 628, "이벤트 연결")
+        self.text(802, 611, "이벤트 / 한글명 / 연결 이름 검색", (153, 171, 196))
+        for kind, box in (("event", EVENT_SEARCH), ("animation", ANIMATION_SEARCH)):
+            rectangle(box, BG)
+            rectangle(box, (255, 215, 64) if self.search_focus == kind else (86, 103, 124), filled=False)
+            value = self.search_queries[kind]
+            if self.search_focus == kind:
+                value += self.search_composition + "_"
+            with clipped(box):
+                self.text(box[0] + 8, box[1] + 9, value or "검색어 입력")
+            self.buttons.append((box, lambda k=kind: self.focus_search(k)))
+        for kind, box, count, height in (("event", EVENT_LIST, 4, 25), ("animation", ANIMATION_LIST, 5, 28)):
+            results = self.search_results(kind)
+            offset = min(self.search_offsets[kind], max(0, len(results) - count))
+            self.search_offsets[kind] = offset
+            with clipped(box):
+                for i, value in enumerate(results[offset:offset + count]):
+                    row = (box[0], box[1] + box[3] - (i + 1) * height, box[2], height - 2)
+                    if kind == "event":
+                        label = f"{value} · {ROLE_LABELS[value]}"
+                        action = lambda e=value: self.choose_binding_event(e)
+                        active = value == self.binding_event
+                    else:
+                        label = value
+                        action = lambda n=value: self.bind_animation(n)
+                        active = value == self.project.event_bindings[self.binding_event]
+                    self.button(row, label, action, active)
+                if not results:
+                    self.text(box[0] + 8, box[1] + box[3] - 22, "검색 결과 없음")
+        with clipped((802, 429, 260, 40)):
+            self.text(802, 452, f"선택: {self.binding_event} / {ROLE_LABELS[self.binding_event]}")
+            self.text(802, 432, f"연결: {self.project.event_bindings[self.binding_event]}")
+        self.text(802, 225, "목록 휠 이동 · 클릭 즉시 연결", (153, 171, 196))
 
     def draw_play(self):
         game = self.game
-        camera = max(0, min(game.WORLD_WIDTH - VIEW[2], game.x - VIEW[2] * .42))
-        sx = lambda x: VIEW[0] + x - camera
-        with clipped(VIEW):
-            rectangle((VIEW[0], VIEW[1], VIEW[2], PLAY_Y - VIEW[1]), (35, 48, 58))
-            p.draw_line(VIEW[0], PLAY_Y, VIEW[0] + VIEW[2] - 1, PLAY_Y, 126, 179, 144)
+        camera = max(0, min(game.WORLD_WIDTH - GAME_VIEW[2], game.x - GAME_VIEW[2] * .42))
+        sx = lambda x: GAME_VIEW[0] + x - camera
+        with clipped(GAME_VIEW):
+            rectangle((GAME_VIEW[0], GAME_VIEW[1], GAME_VIEW[2], PLAY_Y - GAME_VIEW[1]), (35, 48, 58))
+            p.draw_line(GAME_VIEW[0], PLAY_Y, GAME_VIEW[0] + GAME_VIEW[2] - 1, PLAY_Y, 126, 179, 144)
             for x, w, h in game.obstacles:
                 rectangle((sx(x), PLAY_Y, w, h), (102, 113, 132))
             for x, w in game.springs:
@@ -887,6 +942,7 @@ class App:
             self.text(40, 572, "골 도착! R 또는 다시 시작으로 재도전", (255, 215, 64))
         elif game.charging:
             self.text(40, 572, f"스핀 충전 {game.charge * 100:.0f}% · Shift를 놓으면 대시")
+        self.draw_binding_sidebar()
 
     def select_frame(self, step):
         self.cancel_drag()
@@ -1112,6 +1168,30 @@ class App:
     def handle_event(self, event):
         if event.type in (p.SDL_MOUSEMOTION, p.SDL_MOUSEBUTTONDOWN, p.SDL_MOUSEBUTTONUP):
             self.mouse_position = (event.x, HEIGHT - 1 - event.y)
+        if event.type in (p.SDL_TEXTINPUT, p.SDL_TEXTEDITING):
+            if self.search_focus:
+                if event.type == p.SDL_TEXTEDITING:
+                    self.search_composition = event.text
+                else:
+                    kind = self.search_focus
+                    self.search_queries[kind] = (self.search_queries[kind] + event.text)[:64]
+                    self.search_offsets[kind] = 0
+                    self.search_composition = ""
+            return
+        if event.type == p.SDL_KEYDOWN and self.search_focus:
+            if self.search_composition and event.key in (p.SDLK_RETURN, p.SDLK_KP_ENTER):
+                return  # 한글 조합 확정용 Enter는 검색 포커스를 종료하지 않는다.
+            if event.key in (p.SDLK_RETURN, p.SDLK_KP_ENTER, p.SDLK_ESCAPE):
+                self.focus_search(None)
+            elif event.key in (p.SDLK_BACKSPACE, p.SDLK_DELETE) and not self.search_composition:
+                kind = self.search_focus
+                self.search_queries[kind] = "" if event.key == p.SDLK_DELETE else self.search_queries[kind][:-1]
+                self.search_offsets[kind] = 0
+            return
+        if event.type == p.SDL_MOUSEBUTTONDOWN and self.search_focus:
+            x, y = event.x, HEIGHT - 1 - event.y
+            if not contains(EVENT_SEARCH, x, y) and not contains(ANIMATION_SEARCH, x, y):
+                self.focus_search(None)
         if event.type == p.SDL_KEYDOWN and self.thumbnail_drag:
             if event.key == p.SDLK_ESCAPE:
                 self.cancel_drag()
@@ -1226,8 +1306,7 @@ class App:
         self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
-        if self.skip_update:
-            self.skip_update = False
+        if self.search_focus:
             return
         if self.screen == "editor" or self.thumbnail_drag:
             return
@@ -1261,7 +1340,7 @@ def main():
         count = 0
         while app.running:
             start = time.perf_counter()
-            for event in p.get_events():
+            for event in app_events():
                 app.handle_event(event)
             p.SDL_SetWindowTitle(p.window, b"Sonic Animation Viewer")
             app.update(start - previous)
