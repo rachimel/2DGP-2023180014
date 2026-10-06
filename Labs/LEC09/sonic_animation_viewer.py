@@ -59,6 +59,41 @@ def new_project(image_path):
     return Project(image_path, animations)
 
 
+class Player:
+    """화면과 독립된 시간 기반 재생 상태."""
+    def __init__(self, project):
+        self.project = project
+        self.index = 0
+        self.elapsed = 0.0
+        self.finished = False
+
+    def select(self, index):
+        self.index = index % len(self.project.animations)
+        self.elapsed = 0.0
+        self.finished = False
+
+    @property
+    def frame_count(self):
+        return len(self.project.animations[self.index].frames)
+
+    @property
+    def frame_index(self):
+        return min(int((self.elapsed + 1e-10) * FPS), self.frame_count - 1)
+
+    def update(self, dt):
+        if self.finished:
+            return
+        self.elapsed += max(0, dt)
+        while self.elapsed + 1e-10 >= self.frame_count / FPS:
+            duration = self.frame_count / FPS
+            if self.index == len(self.project.animations) - 1:
+                self.elapsed = duration
+                self.finished = True
+                break
+            self.elapsed = max(0, self.elapsed - duration)
+            self.index += 1
+
+
 def contains(box, x, y):
     left, bottom, width, height = box
     return left <= x < left + width and bottom <= y < bottom + height
@@ -92,7 +127,7 @@ class App:
         self.project = new_project(self.image_path)
         self.animation_index = 0
         self.frame_index = 0
-        self.elapsed = 0.0
+        self.player = Player(self.project)
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -128,6 +163,7 @@ class App:
                 image = p.load_image(path)
                 self.image, self.image_path = image, Path(path).resolve()
                 self.project = new_project(self.image_path)
+                self.player = Player(self.project)
                 self.animation_index = self.frame_index = 0
                 self.status = f"이미지: {self.image_path.name}"
         except (OSError, RuntimeError, ValueError) as error:
@@ -158,8 +194,9 @@ class App:
         self.text(24, 32, self.status)
 
     def update(self, dt):
-        self.elapsed += dt
-        self.frame_index = int(self.elapsed * FPS) % len(self.animation.frames)
+        self.player.update(dt)
+        self.animation_index = self.player.index
+        self.frame_index = self.player.frame_index
 
 
 def main():
