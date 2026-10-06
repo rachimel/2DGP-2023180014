@@ -204,6 +204,12 @@ class App:
         self.player.select(self.animation_index)
         self.frame_index = 0
 
+    def toggle_loop(self):
+        self.player.loop = not self.player.loop
+        if self.player.loop and self.player.finished:
+            self.player.select(0)
+            self.animation_index = self.frame_index = 0
+
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
             self.running = False
@@ -230,6 +236,7 @@ class App:
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
+        self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
         self.text(24, 32, self.status)
 
     def update(self, dt):
