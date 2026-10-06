@@ -16,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 WIDTH, HEIGHT = 1100, 760
 FPS = 60
 VIEW = (24, 202, 1052, 450)
+SHEET = (312, 202, 764, 450)
 THUMBNAILS = (24, 60, 1052, 122)
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
@@ -273,7 +274,7 @@ class App:
         self.view_scale = 5.0
         self.view_pan = 0.0
         self.screen = "viewer"
-        self.editor_scale = min((VIEW[2] - 40) / self.image.w, (VIEW[3] - 40) / self.image.h)
+        self.editor_scale = min((SHEET[2] - 40) / self.image.w, (SHEET[3] - 40) / self.image.h)
         self.editor_pan = [0.0, 0.0]
         self.region_mode = False
         self.drag = None
@@ -318,8 +319,10 @@ class App:
                 self.player = Player(self.project)
                 self.animation_index = self.frame_index = 0
                 self.cancel_drag()
-                self.editor_scale = min((VIEW[2] - 40) / image.w, (VIEW[3] - 40) / image.h)
+                self.editor_scale = min((SHEET[2] - 40) / image.w, (SHEET[3] - 40) / image.h)
                 self.editor_pan = [0.0, 0.0]
+                self.region_mode = False
+                self.json_path = None
                 self.status = f"이미지: {self.image_path.name}"
         except (OSError, RuntimeError, ValueError) as error:
             self.status = f"이미지 불러오기 실패: {error}"
@@ -345,7 +348,7 @@ class App:
         self.image, self.image_path, self.project = image, project.image_path, project
         self.player = Player(project)
         self.animation_index = self.frame_index = 0
-        self.editor_scale = min((VIEW[2] - 40) / image.w, (VIEW[3] - 40) / image.h)
+        self.editor_scale = min((SHEET[2] - 40) / image.w, (SHEET[3] - 40) / image.h)
         self.editor_pan = [0.0, 0.0]
         self.region_mode = False
         self.json_path = Path(path).resolve()
@@ -405,6 +408,7 @@ class App:
                 self.view_scale = max(0.5, min(20, self.view_scale * factor))
                 self.view_pan = max(-2000, min(2000, self.view_pan + dx * 24))
             else:
+                self.cancel_drag()
                 self.editor_scale = max(0.25, min(20, self.editor_scale * factor))
                 self.editor_pan[0] += dx * 24
 
@@ -505,7 +509,7 @@ class App:
                 w * self.editor_scale, h * self.editor_scale)
 
     def editor_down(self, button, x, y):
-        if self.screen != "editor" or not contains(VIEW, x, y):
+        if self.screen != "editor" or not contains(SHEET, x, y):
             return
         point = self.source_point(x, y)
         if button == p.SDL_BUTTON_RIGHT and self.frame.rect:
@@ -562,25 +566,26 @@ class App:
         self.status = "현재 프레임의 참조 영역 제거 완료"
 
     def sheet_origin(self):
-        return (VIEW[0] + (VIEW[2] - self.image.w * self.editor_scale) / 2 + self.editor_pan[0],
-                VIEW[1] + (VIEW[3] - self.image.h * self.editor_scale) / 2 + self.editor_pan[1])
+        return (SHEET[0] + (SHEET[2] - self.image.w * self.editor_scale) / 2 + self.editor_pan[0],
+                SHEET[1] + (SHEET[3] - self.image.h * self.editor_scale) / 2 + self.editor_pan[1])
 
     def draw_editor(self):
         x, y = self.sheet_origin()
-        with clipped(VIEW):
+        with clipped(SHEET):
             self.image.draw_to_origin(x, y, self.image.w * self.editor_scale, self.image.h * self.editor_scale)
             self.draw_onion()
             rect = self.draft_rect if self.drag and self.drag["kind"] != "pan" else self.frame.rect
             if rect:
                 box = self.screen_rect(rect)
-                if not self.drag:
+                if not self.drag or self.drag["kind"] == "pan":
                     rectangle(box, (61, 175, 237, 65))
                 rectangle(box, (255, 215, 64), filled=False)
-                rx, ry, _, _ = rect
-                px, py = self.frame.pivot
-                cx, cy = x + (rx + px) * self.editor_scale, y + (ry + py) * self.editor_scale
-                p.draw_line(cx - 7, cy, cx + 7, cy, 255, 126, 97)
-                p.draw_line(cx, cy - 7, cx, cy + 7, 255, 126, 97)
+                if not self.drag or self.drag["kind"] != "create":
+                    rx, ry, _, _ = rect
+                    px, py = self.frame.pivot
+                    cx, cy = x + (rx + px) * self.editor_scale, y + (ry + py) * self.editor_scale
+                    p.draw_line(cx - 7, cy, cx + 7, cy, 255, 126, 97)
+                    p.draw_line(cx, cy - 7, cx, cy + 7, 255, 126, 97)
         self.draw_editor_preview()
 
     def handle_event(self, event):
@@ -645,7 +650,8 @@ class App:
         else:
             self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
             self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
-        self.text(24, 32, self.status)
+        with clipped((24, 20, WIDTH - 48, 34)):
+            self.text(24, 32, self.status)
         help_text = ("Tab 전환 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
                      if self.screen == "editor" else
                      "미리보기 휠/클릭 선택 · 재생 화면 휠 확대/축소 · 좌우 휠 이동 · ←/→ 동작 선택")
@@ -679,6 +685,7 @@ def main():
             start = time.perf_counter()
             for event in p.get_events():
                 app.handle_event(event)
+            p.SDL_SetWindowTitle(p.window, b"Sonic Animation Viewer")
             app.update(start - previous)
             previous = start
             app.draw()
