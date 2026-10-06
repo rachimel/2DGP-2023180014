@@ -178,6 +178,20 @@ class Player:
         self.elapsed = play_elapsed * self.project.fps / value + wait_elapsed
         self.project.fps = value
 
+    def move_animation(self, source, target, after=False):
+        animations = self.project.animations
+        require(0 <= source < len(animations) and 0 <= target < len(animations), "동작 위치가 잘못됐어.")
+        destination = target + int(after)
+        if source < destination:
+            destination -= 1
+        if destination == source:
+            return False
+        current = animations[self.index]
+        animation = animations.pop(source)
+        animations.insert(destination, animation)
+        self.index = next(i for i, entry in enumerate(animations) if entry is current)
+        return True
+
     @property
     def frame_count(self):
         return len(self.project.animations[self.index].frames)
