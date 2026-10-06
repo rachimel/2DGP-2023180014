@@ -210,6 +210,19 @@ class App:
             self.player.select(0)
             self.animation_index = self.frame_index = 0
 
+    def draw_thumbnails(self):
+        for index, animation in enumerate(self.project.animations[:7]):
+            box = (40 + index * 146, 70, 136, 102)
+            rectangle(box, (39, 49, 65))
+            frame = animation.frames[0]
+            if frame.rect:
+                w, h = frame.rect[2:]
+                scale = min(2, 110 / w, 62 / h)
+                px, py = frame.pivot
+                self.draw_frame(frame, box[0] + box[2] / 2 + (px - w / 2) * scale,
+                                125 + (py - h / 2) * scale, scale)
+            self.text(box[0] + 14, 82, animation.name)
+
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
             self.running = False
@@ -227,6 +240,7 @@ class App:
         rectangle((0, 0, WIDTH, HEIGHT), BG)
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
+        self.draw_thumbnails()
         p.draw_line(250, 332, 850, 332, 64, 81, 101)
         self.draw_frame(self.frame, WIDTH / 2, 332, 5)
         self.text(40, 628, self.animation.name)
