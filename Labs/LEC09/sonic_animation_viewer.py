@@ -6,6 +6,7 @@ import time
 import json
 import os
 import tempfile
+import math
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 
@@ -94,6 +95,53 @@ def export_project(project, image_size, target):
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def parse_project(document, source):
+    require(isinstance(document, dict), "JSON 최상위는 객체여야 해.")
+    require(document.get("version") == 1, "지원하지 않는 JSON 버전이야.")
+    require(document.get("fps") == FPS, "재생 속도는 60fps여야 해.")
+    require(document.get("coordinates") == "bottom-left", "좌표 기준이 일치하지 않아.")
+    image = document.get("image")
+    require(isinstance(image, dict), "이미지 정보가 없어.")
+    reference, size = image.get("path"), image.get("size")
+    require(isinstance(reference, str) and bool(reference.strip()), "이미지 경로가 없어.")
+    require(isinstance(size, list) and len(size) == 2 and all(type(n) is int and n > 0 for n in size), "이미지 크기가 잘못됐어.")
+    rows = document.get("animations")
+    require(isinstance(rows, list) and bool(rows), "애니메이션이 하나 이상 필요해.")
+    animations = []
+    for row in rows:
+        require(isinstance(row, dict), "동작 정보가 잘못됐어.")
+        name, entries = row.get("name"), row.get("frames")
+        require(isinstance(name, str) and bool(name.strip()), "동작 이름이 없어.")
+        require(isinstance(entries, list) and bool(entries), "동작에 프레임이 하나 이상 필요해.")
+        frames = []
+        for entry in entries:
+            require(isinstance(entry, dict) and "rect" in entry, "프레임 정보가 잘못됐어.")
+            rect, pivot = entry["rect"], entry.get("pivot")
+            if rect is not None:
+                require(isinstance(rect, list) and len(rect) == 4 and all(type(n) is int for n in rect), "영역은 정수 좌표 4개여야 해.")
+                x, y, w, h = rect
+                require(x >= 0 and y >= 0 and w > 0 and h > 0 and x + w <= size[0] and y + h <= size[1], "영역이 이미지 경계를 벗어났어.")
+            require(isinstance(pivot, list) and len(pivot) == 2 and
+                    all(type(n) in (int, float) and math.isfinite(n) for n in pivot), "피봇 좌표가 잘못됐어.")
+            frames.append(Frame(tuple(rect) if rect else None, tuple(pivot)))
+        animations.append(Animation(name, frames))
+    image_path = Path(reference)
+    if not image_path.is_absolute():
+        image_path = Path(source).resolve().parent / image_path
+    return Project(image_path.resolve(), animations), tuple(size)
+
+
+def import_project(source):
+    source = Path(source).resolve()
+    document = json.loads(source.read_text(encoding="utf-8-sig"))
+    return parse_project(document, source)
 
 
 class Player:
@@ -287,6 +335,29 @@ class App:
                 self.status = f"JSON 저장 완료: {self.json_path.name}"
         except (OSError, ValueError, RuntimeError) as error:
             self.status = f"JSON 저장 실패: {error}"
+
+    def import_from(self, path):
+        project, size = import_project(path)
+        image = p.load_image(str(project.image_path))
+        require((image.w, image.h) == size, "원본 이미지 크기가 JSON과 달라.")
+        # 데이터와 이미지가 모두 유효할 때만 현재 편집 상태를 교체한다.
+        self.cancel_drag()
+        self.image, self.image_path, self.project = image, project.image_path, project
+        self.player = Player(project)
+        self.animation_index = self.frame_index = 0
+        self.editor_scale = min((VIEW[2] - 40) / image.w, (VIEW[3] - 40) / image.h)
+        self.editor_pan = [0.0, 0.0]
+        self.region_mode = False
+        self.json_path = Path(path).resolve()
+        self.status = f"JSON 불러오기 완료: {self.json_path.name}"
+
+    def load_json(self):
+        try:
+            path = file_dialog(title="편집 데이터 JSON 열기", filetypes=[("JSON", "*.json")])
+            if path:
+                self.import_from(path)
+        except (OSError, ValueError, RuntimeError) as error:
+            self.status = f"JSON 불러오기 실패: {error}"
 
     def toggle_five(self):
         self.player.repeat_five = not self.player.repeat_five
@@ -566,6 +637,7 @@ class App:
                 self.text(40, 572, "1초 대기 중", (255, 209, 91))
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((308, 704, 150, 36), "JSON 저장", self.save_json)
+        self.button((470, 704, 170, 36), "JSON 불러오기", self.load_json)
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.button((704, 704, 184, 36), "뷰어 / 편집 [Tab]", self.toggle_screen, self.screen == "editor")
         if self.screen == "editor":
