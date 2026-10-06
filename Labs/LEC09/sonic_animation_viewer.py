@@ -453,6 +453,45 @@ def file_dialog(save=False, **options):
         root.destroy()
 
 
+def event_binding_dialog(project, initial_event):
+    """문자열 입력과 기존 이름 선택을 함께 지원하는 런타임 설정 창."""
+    import tkinter as tk
+    from tkinter import ttk
+    root = tk.Tk()
+    root.title("이벤트 연결 설정")
+    root.attributes("-topmost", True)
+    root.resizable(False, False)
+    result = None
+    event = tk.StringVar(value=initial_event)
+    name = tk.StringVar(value=project.event_bindings[initial_event])
+    error = tk.StringVar()
+    ttk.Label(root, text="이벤트").grid(row=0, column=0, padx=12, pady=12)
+    selector = ttk.Combobox(root, textvariable=event, values=list(EVENT_ANIMATIONS), state="readonly", width=28)
+    selector.grid(row=0, column=1, padx=12, pady=12)
+    selector.bind("<<ComboboxSelected>>", lambda _: name.set(project.event_bindings[event.get()]))
+    ttk.Label(root, text="애니메이션 이름").grid(row=1, column=0, padx=12, pady=8)
+    entry = ttk.Combobox(root, textvariable=name, values=[a.name for a in project.animations], width=28)
+    entry.grid(row=1, column=1, padx=12, pady=8)
+    ttk.Label(root, textvariable=error, foreground="red").grid(row=2, column=0, columnspan=2, padx=12, pady=8)
+
+    def apply():
+        nonlocal result
+        matches = sum(a.name == name.get() for a in project.animations)
+        if matches != 1:
+            error.set("목록에 있는 고유한 애니메이션 이름을 입력해.")
+            return
+        result = (event.get(), name.get())
+        root.destroy()
+
+    ttk.Button(root, text="적용", command=apply).grid(row=3, column=0, padx=12, pady=12)
+    ttk.Button(root, text="취소", command=root.destroy).grid(row=3, column=1, padx=12, pady=12)
+    root.bind("<Return>", lambda _: apply())
+    root.bind("<Escape>", lambda _: root.destroy())
+    entry.focus_set()
+    root.mainloop()
+    return result
+
+
 class App:
     def __init__(self):
         self.running = True
@@ -483,6 +522,7 @@ class App:
         self.fps_text = f"{self.project.fps:g}"
         self.game = Game(self.project)
         self.play_paused = False
+        self.skip_update = False
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -784,12 +824,26 @@ class App:
         self.frame_index = self.game.frame_index
 
     def draw_game_events(self):
-        self.text(34, 158, "이벤트 -> 애니메이션 · JSON의 event_bindings 문자열로 설정")
+        self.text(34, 158, "이벤트 -> 애니메이션 · 실행 중 이름 입력/선택 · JSON 저장 가능")
+        self.button((880, 134, 176, 34), "이벤트 연결 설정", self.edit_event_binding)
         event = self.game.state
         name = self.project.event_bindings[event]
         self.text(34, 124, f'현재 이벤트: "{event}" -> "{name}"', (255, 215, 64))
         missing = not any(a.name == name for a in self.project.animations)
         self.text(34, 90, "연결한 이름을 찾지 못해 첫 동작을 표시 중이야." if missing else "입력·충돌 이벤트에 따라 연결된 동작을 자동 재생해.")
+
+    def edit_event_binding(self):
+        self.game.stop_input()
+        try:
+            result = event_binding_dialog(self.project, self.game.state)
+            if result:
+                event, name = result
+                self.project.event_bindings[event] = name
+                self.sync_game()
+                self.status = f'이벤트 "{event}" 연결 변경: "{name}" · JSON 저장으로 보관해.'
+        finally:
+            # 설정 창에서 보낸 시간을 다음 물리 업데이트에 합산하지 않는다.
+            self.skip_update = True
 
     def draw_play(self):
         game = self.game
@@ -1165,6 +1219,9 @@ class App:
         self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
+        if self.skip_update:
+            self.skip_update = False
+            return
         if self.screen == "editor" or self.thumbnail_drag:
             return
         if self.screen == "play":
