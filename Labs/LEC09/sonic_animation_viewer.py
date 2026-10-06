@@ -4,6 +4,7 @@ from pathlib import Path
 import argparse
 import time
 from dataclasses import dataclass, field
+from contextlib import contextmanager
 
 import pico2d.pico2d as p
 
@@ -134,6 +135,19 @@ def rectangle(box, color, filled=True):
     p.draw_rectangle(x, y, x + w - 1, y + h - 1, *color, filled=filled)
 
 
+@contextmanager
+def clipped(box):
+    previous = p.SDL_Rect()
+    enabled = p.SDL_RenderIsClipEnabled(p.renderer)
+    p.SDL_RenderGetClipRect(p.renderer, p.ctypes.byref(previous))
+    rect = p.to_sdl_rect(*box)
+    p.SDL_RenderSetClipRect(p.renderer, p.ctypes.byref(rect))
+    try:
+        yield
+    finally:
+        p.SDL_RenderSetClipRect(p.renderer, p.ctypes.byref(previous) if enabled else None)
+
+
 def file_dialog(save=False, **options):
     import tkinter as tk
     from tkinter import filedialog
@@ -158,6 +172,7 @@ class App:
         self.animation_index = 0
         self.frame_index = 0
         self.player = Player(self.project)
+        self.view_scale = 5.0
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -238,6 +253,8 @@ class App:
     def handle_wheel(self, dx, dy, x, y):
         if contains(THUMBNAILS, x, y) and dy:
             self.select_animation(self.animation_index - int(dy))
+        elif contains(VIEW, x, y):
+            self.view_scale = max(0.5, min(20, self.view_scale * 1.15 ** max(-20, min(20, dy))))
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
@@ -263,8 +280,9 @@ class App:
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
         self.draw_thumbnails()
-        p.draw_line(250, 332, 850, 332, 64, 81, 101)
-        self.draw_frame(self.frame, WIDTH / 2, 332, 5)
+        with clipped(VIEW):
+            p.draw_line(250, 332, 850, 332, 64, 81, 101)
+            self.draw_frame(self.frame, WIDTH / 2, 332, self.view_scale)
         self.text(40, 628, self.animation.name)
         self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
         if self.player.waiting:
