@@ -96,6 +96,20 @@ class App:
     def text(self, x, y, value, color=TEXT):
         self.font.draw(x, y, value, color)
 
+    @property
+    def animation(self):
+        return self.project.animations[self.animation_index]
+
+    @property
+    def frame(self):
+        return self.animation.frames[self.frame_index]
+
+    def draw_frame(self, frame, x, y, scale):
+        if frame.rect is None:
+            return
+        left, bottom, w, h = frame.rect
+        self.image.clip_draw(left, bottom, w, h, x, y, w * scale, h * scale)
+
     def button(self, box, label, action, active=False):
         rectangle(box, (48, 89, 116) if active else (46, 56, 72))
         x, y, w, h = box
@@ -131,8 +145,8 @@ class App:
         rectangle((0, 0, WIDTH, HEIGHT), BG)
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
-        scale = min((VIEW[2] - 40) / self.image.w, (VIEW[3] - 40) / self.image.h)
-        self.image.draw(WIDTH / 2, VIEW[1] + VIEW[3] / 2, self.image.w * scale, self.image.h * scale)
+        self.draw_frame(self.frame, WIDTH / 2, VIEW[1] + VIEW[3] / 2, 5)
+        self.text(40, 628, self.animation.name)
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.text(24, 32, self.status)
