@@ -30,7 +30,8 @@ ANIMATION_SEARCH = (802, 395, 260, 28)
 ANIMATION_LIST = (802, 249, 260, 140)
 ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run_1": "달리기 1단계",
                "run_2": "달리기 2단계", "charge": "스핀 충전",
-               "dash": "대시", "jump": "점프 상승", "spring_jump": "스프링 점프", "fall": "하강",
+               "dash": "대시", "jump": "점프 상승", "spring_jump": "스프링 점프", "fall": "일반 하강",
+               "spring_fall": "스프링 하강",
                "brake": "제동", "hurt": "피격", "goal": "골"}
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
@@ -64,6 +65,7 @@ class Project:
                 self.event_bindings.setdefault(event, legacy_run)
         for event in ("spring_jump", "fall"):
             self.event_bindings.setdefault(event, self.event_bindings.get("jump", ""))
+        self.event_bindings.setdefault("spring_fall", self.event_bindings["fall"])
         for event in ROLE_LABELS:
             self.event_bindings.setdefault(event, "")
 
@@ -400,7 +402,10 @@ class Game:
         if self.x >= self.GOAL_X and self.grounded:
             self.finished = True
             self.vx = 0
-        air_state = "fall" if self.vy < 0 else "spring_jump" if self.spring_jump else "jump"
+        if self.vy < 0:
+            air_state = "spring_fall" if self.spring_jump else "fall"
+        else:
+            air_state = "spring_jump" if self.spring_jump else "jump"
         state = ("goal" if self.finished else "hurt" if self.hurt_time > 0 else "start" if self.start_time > 0
                  else "charge" if self.charging else air_state if not self.grounded
                  else "dash" if self.dash_time > 0 else "brake" if not direction and abs(self.vx) > 5

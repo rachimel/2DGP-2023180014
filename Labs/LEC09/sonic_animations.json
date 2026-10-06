@@ -21,7 +21,8 @@
     "run_1": "동작 06",
     "run_2": "동작 06",
     "spring_jump": "동작 05",
-    "fall": "동작 05"
+    "fall": "동작 05",
+    "spring_fall": "동작 05"
   },
   "animations": [
     {
