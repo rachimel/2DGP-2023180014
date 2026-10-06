@@ -3,6 +3,9 @@
 from pathlib import Path
 import argparse
 import time
+import json
+import os
+import tempfile
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 
@@ -58,6 +61,39 @@ def new_project(image_path):
     else:
         animations = [Animation("동작 01")]
     return Project(image_path, animations)
+
+
+def project_document(project, image_size, target):
+    try:
+        image_reference = Path(os.path.relpath(project.image_path, target.parent)).as_posix()
+    except ValueError:
+        image_reference = project.image_path.as_posix()
+    return {
+        "version": 1, "fps": FPS, "coordinates": "bottom-left",
+        "image": {"path": image_reference, "size": list(image_size)},
+        "animations": [
+            {"name": animation.name, "frames": [
+                {"rect": list(frame.rect) if frame.rect else None, "pivot": list(frame.pivot)}
+                for frame in animation.frames]}
+            for animation in project.animations],
+    }
+
+
+def export_project(project, image_size, target):
+    target = Path(target).resolve()
+    document = project_document(project, image_size, target)
+    # 실패한 저장이 기존 JSON을 손상시키지 않도록 같은 폴더에서 교체한다.
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent,
+                                         prefix=".sonic-", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(document, stream, ensure_ascii=False, indent=2, allow_nan=False)
+            stream.write("\n")
+        os.replace(temporary, target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 class Player:
@@ -195,6 +231,7 @@ class App:
         self.drag = None
         self.draft_rect = None
         self.onion = True
+        self.json_path = None
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -238,6 +275,18 @@ class App:
                 self.status = f"이미지: {self.image_path.name}"
         except (OSError, RuntimeError, ValueError) as error:
             self.status = f"이미지 불러오기 실패: {error}"
+
+    def save_json(self):
+        try:
+            path = file_dialog(save=True, title="편집 데이터 JSON 저장", defaultextension=".json",
+                               initialfile=self.json_path.name if self.json_path else "sonic_animations.json",
+                               filetypes=[("JSON", "*.json")])
+            if path:
+                export_project(self.project, (self.image.w, self.image.h), path)
+                self.json_path = Path(path).resolve()
+                self.status = f"JSON 저장 완료: {self.json_path.name}"
+        except (OSError, ValueError, RuntimeError) as error:
+            self.status = f"JSON 저장 실패: {error}"
 
     def toggle_five(self):
         self.player.repeat_five = not self.player.repeat_five
@@ -516,6 +565,7 @@ class App:
             if self.player.waiting:
                 self.text(40, 572, "1초 대기 중", (255, 209, 91))
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
+        self.button((308, 704, 150, 36), "JSON 저장", self.save_json)
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.button((704, 704, 184, 36), "뷰어 / 편집 [Tab]", self.toggle_screen, self.screen == "editor")
         if self.screen == "editor":
