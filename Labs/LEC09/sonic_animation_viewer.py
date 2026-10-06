@@ -29,7 +29,7 @@ EVENT_LIST = (802, 473, 260, 100)
 ANIMATION_SEARCH = (802, 395, 260, 28)
 ANIMATION_LIST = (802, 249, 260, 140)
 ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run_1": "달리기 1단계",
-               "run_2": "달리기 2단계", "run_3": "달리기 3단계", "charge": "스핀 충전",
+               "run_2": "달리기 2단계", "charge": "스핀 충전",
                "dash": "대시", "jump": "점프 상승", "spring_jump": "스프링 점프", "fall": "하강",
                "brake": "제동", "hurt": "피격", "goal": "골"}
 BG = (19, 24, 34)
@@ -57,9 +57,10 @@ class Project:
     event_bindings: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        self.event_bindings.pop("run_3", None)
         legacy_run = self.event_bindings.pop("run", "")
         if legacy_run:
-            for event in ("run_1", "run_2", "run_3"):
+            for event in ("run_1", "run_2"):
                 self.event_bindings.setdefault(event, legacy_run)
         for event in ("spring_jump", "fall"):
             self.event_bindings.setdefault(event, self.event_bindings.get("jump", ""))
@@ -160,7 +161,7 @@ def parse_project(document, source):
         if "event_bindings" not in document:
             require(type(name) is int and 0 <= name < len(animations), "이전 플레이 동작 연결이 올바르지 않습니다.")
             name = animations[name].name
-        require((role in ROLE_LABELS or role == "run") and isinstance(name, str), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 합니다.")
+        require((role in ROLE_LABELS or role in ("run", "run_3")) and isinstance(name, str), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 합니다.")
         roles[role] = name
     return Project(image_path.resolve(), animations, roles), tuple(size)
 
@@ -268,7 +269,7 @@ class Game:
     HALF_WIDTH, HEIGHT = 20, 58
     WORLD_WIDTH, GOAL_X = 2600, 2470
     GROUND_FRICTION = 780
-    RUN_THRESHOLDS = (220, 280, 340)
+    RUN_THRESHOLDS = (220, 280)
 
     def __init__(self, project):
         self.project = project
