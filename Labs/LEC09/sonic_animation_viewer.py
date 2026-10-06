@@ -174,6 +174,9 @@ class App:
         self.player = Player(self.project)
         self.view_scale = 5.0
         self.view_pan = 0.0
+        self.screen = "viewer"
+        self.editor_scale = min((VIEW[2] - 40) / self.image.w, (VIEW[3] - 40) / self.image.h)
+        self.editor_pan = [0.0, 0.0]
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -255,14 +258,35 @@ class App:
         if contains(THUMBNAILS, x, y) and dy:
             self.select_animation(self.animation_index - int(dy))
         elif contains(VIEW, x, y):
-            self.view_scale = max(0.5, min(20, self.view_scale * 1.15 ** max(-20, min(20, dy))))
-            self.view_pan = max(-2000, min(2000, self.view_pan + dx * 24))
+            factor = 1.15 ** max(-20, min(20, dy))
+            if self.screen == "viewer":
+                self.view_scale = max(0.5, min(20, self.view_scale * factor))
+                self.view_pan = max(-2000, min(2000, self.view_pan + dx * 24))
+            else:
+                self.editor_scale = max(0.25, min(20, self.editor_scale * factor))
+                self.editor_pan[0] += dx * 24
+
+    def toggle_screen(self):
+        self.screen = "editor" if self.screen == "viewer" else "viewer"
+        self.player.select(self.animation_index)
+        self.frame_index = 0
+
+    def sheet_origin(self):
+        return (VIEW[0] + (VIEW[2] - self.image.w * self.editor_scale) / 2 + self.editor_pan[0],
+                VIEW[1] + (VIEW[3] - self.image.h * self.editor_scale) / 2 + self.editor_pan[1])
+
+    def draw_editor(self):
+        x, y = self.sheet_origin()
+        with clipped(VIEW):
+            self.image.draw_to_origin(x, y, self.image.w * self.editor_scale, self.image.h * self.editor_scale)
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
             self.running = False
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_ESCAPE:
             self.running = False
+        elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_TAB:
+            self.toggle_screen()
         elif event.type == p.SDL_KEYDOWN and event.key in (p.SDLK_LEFT, p.SDLK_RIGHT):
             self.select_animation(self.animation_index + (1 if event.key == p.SDLK_RIGHT else -1))
         elif event.type == p.SDL_MOUSEWHEEL:
@@ -282,20 +306,26 @@ class App:
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
         self.draw_thumbnails()
-        with clipped(VIEW):
-            p.draw_line(250, 332, 850, 332, 64, 81, 101)
-            self.draw_frame(self.frame, WIDTH / 2 + self.view_pan, 332, self.view_scale)
-        self.text(40, 628, self.animation.name)
-        self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
-        if self.player.waiting:
-            self.text(40, 572, "1초 대기 중", (255, 209, 91))
+        if self.screen == "editor":
+            self.draw_editor()
+        else:
+            with clipped(VIEW):
+                p.draw_line(250, 332, 850, 332, 64, 81, 101)
+                self.draw_frame(self.frame, WIDTH / 2 + self.view_pan, 332, self.view_scale)
+            self.text(40, 628, self.animation.name)
+            self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
+            if self.player.waiting:
+                self.text(40, 572, "1초 대기 중", (255, 209, 91))
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
+        self.button((704, 704, 184, 36), "뷰어 / 편집 [Tab]", self.toggle_screen, self.screen == "editor")
         self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
         self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
         self.text(24, 32, self.status)
 
     def update(self, dt):
+        if self.screen == "editor":
+            return
         self.player.update(dt)
         self.animation_index = self.player.index
         self.frame_index = self.player.frame_index
