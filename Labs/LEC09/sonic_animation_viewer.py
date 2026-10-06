@@ -19,6 +19,8 @@ DISPLAY_FPS = 60
 VIEW = (24, 202, 1052, 450)
 SHEET = (312, 202, 764, 450)
 THUMBNAILS = (24, 60, 1052, 122)
+SPEED_INPUT = (560, 663, 126, 30)
+SPEED_APPLY = (698, 663, 96, 30)
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
 TEXT = (223, 230, 242)
@@ -298,6 +300,9 @@ class App:
         self.onion = True
         self.grid = True
         self.json_path = None
+        self.fps_editing = False
+        self.fps_select_all = False
+        self.fps_text = f"{self.project.fps:g}"
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -349,6 +354,7 @@ class App:
                 self.editor_pan = [0.0, 0.0]
                 self.region_mode = False
                 self.json_path = None
+                self.cancel_fps_edit()
                 self.status = f"이미지: {self.image_path.name}"
         except (OSError, RuntimeError, ValueError) as error:
             self.status = f"이미지 불러오기 실패: {error}"
@@ -378,6 +384,7 @@ class App:
         self.editor_pan = [0.0, 0.0]
         self.region_mode = False
         self.json_path = Path(path).resolve()
+        self.cancel_fps_edit()
         self.status = f"JSON 불러오기 완료: {self.json_path.name}"
 
     def load_json(self):
@@ -392,6 +399,61 @@ class App:
         self.player.repeat_five = not self.player.repeat_five
         self.player.select(self.animation_index)
         self.frame_index = 0
+
+    def start_fps_edit(self):
+        self.fps_editing = True
+        self.fps_select_all = True
+        self.fps_text = f"{self.project.fps:g}"
+
+    def cancel_fps_edit(self):
+        self.fps_editing = False
+        self.fps_select_all = False
+        self.fps_text = f"{self.project.fps:g}"
+
+    def apply_fps(self):
+        try:
+            self.player.set_fps(float(self.fps_text))
+        except ValueError:
+            self.fps_editing = True
+            self.status = "재생 속도는 0.1~240fps 사이의 숫자로 입력해."
+            return
+        self.frame_index = self.player.frame_index
+        self.cancel_fps_edit()
+        self.status = f"재생 속도 적용: {self.project.fps:g}fps"
+
+    def handle_fps_key(self, key):
+        if key in (p.SDLK_RETURN, p.SDLK_KP_ENTER):
+            self.apply_fps()
+            return
+        if key == p.SDLK_ESCAPE:
+            self.cancel_fps_edit()
+            return
+        if key in (p.SDLK_BACKSPACE, p.SDLK_DELETE):
+            self.fps_text = "" if self.fps_select_all or key == p.SDLK_DELETE else self.fps_text[:-1]
+            self.fps_select_all = False
+            return
+        digits = {p.SDLK_KP_0: "0", **{p.SDLK_KP_1 + i: str(i + 1) for i in range(9)}}
+        character = chr(key) if ord("0") <= key <= ord("9") else digits.get(key)
+        if key in (p.SDLK_PERIOD, p.SDLK_KP_PERIOD):
+            character = "."
+        if character is not None:
+            text = "" if self.fps_select_all else self.fps_text
+            if len(text) < 8 and (character != "." or "." not in text):
+                self.fps_text = text + character
+                self.fps_select_all = False
+
+    def draw_speed_control(self):
+        self.text(516, 675, "FPS")
+        rectangle(SPEED_INPUT, (15, 20, 29))
+        rectangle(SPEED_INPUT, (255, 215, 64) if self.fps_editing else (86, 103, 124), filled=False)
+        x, y, w, h = SPEED_INPUT
+        if self.fps_editing and self.fps_select_all:
+            rectangle((x + 7, y + 5, max(8, len(self.fps_text) * 9), 21), (62, 93, 132))
+        value = self.fps_text if self.fps_editing else f"{self.project.fps:g}"
+        self.text(x + 9, y + h / 2 - 5, value + ("_" if self.fps_editing and not self.fps_select_all else ""))
+        self.buttons.append((SPEED_INPUT, self.start_fps_edit))
+        self.button(SPEED_APPLY, "적용", self.apply_fps, self.fps_editing)
+        self.text(812, 675, "0.1~240fps · Enter 적용", (153, 171, 196))
 
     def toggle_loop(self):
         self.player.loop = not self.player.loop
@@ -442,6 +504,7 @@ class App:
         if self.screen == screen:
             return
         self.cancel_drag()
+        self.cancel_fps_edit()
         self.screen = screen
         self.player.select(self.animation_index)
         self.frame_index = 0
@@ -650,6 +713,9 @@ class App:
         self.draw_editor_preview()
 
     def handle_event(self, event):
+        if event.type == p.SDL_KEYDOWN and self.fps_editing:
+            self.handle_fps_key(event.key)
+            return
         if event.type == p.SDL_QUIT:
             self.running = False
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_ESCAPE:
@@ -671,6 +737,8 @@ class App:
             self.handle_wheel(event.x, event.y, mx.value, HEIGHT - 1 - my.value)
         elif event.type == p.SDL_MOUSEBUTTONDOWN:
             x, y = event.x, HEIGHT - 1 - event.y
+            if self.fps_editing and not contains(SPEED_INPUT, x, y) and not contains(SPEED_APPLY, x, y):
+                self.cancel_fps_edit()
             if event.button == p.SDL_BUTTON_LEFT:
                 for box, action in self.buttons:
                     if contains(box, x, y):
@@ -714,6 +782,7 @@ class App:
         else:
             self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
             self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
+            self.draw_speed_control()
         with clipped((24, 20, WIDTH - 48, 34)):
             self.text(24, 32, self.status)
         help_text = ("상단 탭으로 화면 전환 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
