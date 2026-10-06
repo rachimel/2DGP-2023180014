@@ -67,6 +67,7 @@ class Player:
         self.elapsed = 0.0
         self.finished = False
         self.repeat_five = True
+        self.loop = False
 
     def select(self, index):
         self.index = index % len(self.project.animations)
@@ -107,12 +108,18 @@ class Player:
         if self.finished:
             return
         self.elapsed += max(0, dt)
+        if self.loop:
+            period = sum(len(a.frames) * self.repetitions / FPS + (1 if self.repeat_five else 0)
+                         for a in self.project.animations)
+            self.elapsed %= period
         while self.elapsed + 1e-10 >= self.duration:
             duration = self.duration
             if self.index == len(self.project.animations) - 1:
-                self.elapsed = duration
-                self.finished = True
-                break
+                if not self.loop:
+                    self.elapsed = duration
+                    self.finished = True
+                    break
+                self.index = -1
             self.elapsed = max(0, self.elapsed - duration)
             self.index += 1
 
