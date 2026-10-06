@@ -3,6 +3,7 @@
 from pathlib import Path
 import argparse
 import time
+from dataclasses import dataclass, field
 
 import pico2d.pico2d as p
 
@@ -13,6 +14,48 @@ THUMBNAILS = (24, 60, 1052, 122)
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
 TEXT = (223, 230, 242)
+
+# LEC08에서 직접 지정한 Sonic 프레임 좌표. 외부 JSON 없이 실행한다.
+DEFAULT_ROWS = (
+    ((1,447,29,39,18),(31,447,26,38,14.5),(58,447,28,39,17),(86,447,30,38,17.5),(118,447,30,38,17.5),(150,447,30,38,13.5),(182,447,29,38,11.5),(211,448,29,38,18),(240,448,29,38,18),(270,448,24,32,12),(302,448,29,26,13)),
+    ((8,408,26,37,13),(37,408,27,37,13.5),(65,407,31,38,15.5),(97,408,37,37,18.5),(135,410,32,35,16),(170,408,32,38,16),(206,408,26,38,13),(238,408,24,37,12),(263,408,30,37,15),(295,408,36,37,18),(334,409,32,36,16),(370,408,29,38,14.5)),
+    ((1,361,33,40,16.5),(39,362,35,39,17.5),(89,362,35,38,17.5),(130,362,34,40,17),(181,362,34,40,17),(228,363,33,39,16.5)),
+    ((1,326,29,30,14.5),(35,327,29,31,14.5),(67,327,30,29,15),(98,327,31,29,15.5),(131,327,29,30,14.5),(162,326,29,31,14.5),(193,326,30,29,15),(230,326,31,29,15.5),(268,325,30,30,15)),
+    ((1,292,30,27,15),(36,292,29,27,14.5),(70,292,29,27,14.5),(105,292,29,27,14.5),(139,292,29,27,14.5),(174,292,29,27,14.5)),
+    ((1,251,29,35,14.5),(36,251,30,35,15),(74,251,31,35,15.5),(111,251,31,36,15.5),(149,251,30,35,15),(186,251,31,36,15.5)),
+    ((1,207,29,35,14.5),(36,207,30,35,15),(72,208,39,31,19.5),(123,208,39,32,19.5),(172,208,39,31,19.5),(218,208,38,32,19)),
+    ((1,154,24,45,12),(31,154,29,44,14.5),(65,154,20,44,10),(90,155,25,43,12.5),(119,155,25,43,12.5),(149,154,20,44,10),(184,156,40,28,20),(232,157,39,27,19.5)),
+    ((1,108,27,38,13.5),(31,110,31,36,15.5),(64,110,31,36,15.5),(99,110,33,38,16.5),(136,110,32,36,16),(176,110,33,36,16.5),(217,110,33,36,16.5),(254,111,33,36,16.5)),
+    ((6,56,34,40,17),(49,56,34,43,17),(96,59,23,39,11.5),(125,59,23,39,11.5)),
+)
+
+
+@dataclass
+class Frame:
+    # rect는 이미지의 왼쪽 아래 기준 (x, y, width, height), pivot은 영역 내부 좌표.
+    rect: tuple | None = None
+    pivot: tuple = (0.0, 0.0)
+
+
+@dataclass
+class Animation:
+    name: str
+    frames: list = field(default_factory=lambda: [Frame()])
+
+
+@dataclass
+class Project:
+    image_path: Path
+    animations: list
+
+
+def new_project(image_path):
+    if image_path.resolve() == (BASE_DIR / "sonic-sprite.png").resolve():
+        animations = [Animation(f"동작 {i + 1:02}", [Frame(tuple(row[:4]), (row[4], 0)) for row in rows])
+                      for i, rows in enumerate(DEFAULT_ROWS)]
+    else:
+        animations = [Animation("동작 01")]
+    return Project(image_path, animations)
 
 
 def contains(box, x, y):
@@ -45,6 +88,9 @@ class App:
         self.status = "이미지 열기로 스프라이트 시트를 불러올 수 있어."
         self.image_path = BASE_DIR / "sonic-sprite.png"
         self.image = p.load_image(str(self.image_path))
+        self.project = new_project(self.image_path)
+        self.animation_index = 0
+        self.frame_index = 0
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -62,6 +108,8 @@ class App:
             if path:
                 image = p.load_image(path)
                 self.image, self.image_path = image, Path(path).resolve()
+                self.project = new_project(self.image_path)
+                self.animation_index = self.frame_index = 0
                 self.status = f"이미지: {self.image_path.name}"
         except (OSError, RuntimeError, ValueError) as error:
             self.status = f"이미지 불러오기 실패: {error}"
