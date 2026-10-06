@@ -116,51 +116,51 @@ def require(condition, message):
 
 def validated_fps(value):
     require(type(value) in (int, float) and math.isfinite(value) and 0.1 <= value <= 240,
-            "재생 속도는 0.1~240fps 사이의 숫자여야 해.")
+            "재생 속도는 0.1~240fps 범위의 숫자여야 합니다.")
     return float(value)
 
 
 def parse_project(document, source):
-    require(isinstance(document, dict), "JSON 최상위는 객체여야 해.")
-    require(document.get("version") == 1, "지원하지 않는 JSON 버전이야.")
+    require(isinstance(document, dict), "JSON 최상위는 객체여야 합니다.")
+    require(document.get("version") == 1, "지원하지 않는 JSON 버전입니다.")
     legacy_fps = validated_fps(document.get("fps", DEFAULT_FPS))
-    require(document.get("coordinates") == "bottom-left", "좌표 기준이 일치하지 않아.")
+    require(document.get("coordinates") == "bottom-left", "좌표 기준이 일치하지 않습니다.")
     image = document.get("image")
-    require(isinstance(image, dict), "이미지 정보가 없어.")
+    require(isinstance(image, dict), "이미지 정보가 없습니다.")
     reference, size = image.get("path"), image.get("size")
-    require(isinstance(reference, str) and bool(reference.strip()), "이미지 경로가 없어.")
-    require(isinstance(size, list) and len(size) == 2 and all(type(n) is int and n > 0 for n in size), "이미지 크기가 잘못됐어.")
+    require(isinstance(reference, str) and bool(reference.strip()), "이미지 경로가 없습니다.")
+    require(isinstance(size, list) and len(size) == 2 and all(type(n) is int and n > 0 for n in size), "이미지 크기가 올바르지 않습니다.")
     rows = document.get("animations")
-    require(isinstance(rows, list) and bool(rows), "애니메이션이 하나 이상 필요해.")
+    require(isinstance(rows, list) and bool(rows), "애니메이션이 하나 이상 필요합니다.")
     animations = []
     for row in rows:
-        require(isinstance(row, dict), "동작 정보가 잘못됐어.")
+        require(isinstance(row, dict), "동작 정보가 올바르지 않습니다.")
         name, entries = row.get("name"), row.get("frames")
-        require(isinstance(name, str) and bool(name.strip()), "동작 이름이 없어.")
-        require(isinstance(entries, list) and bool(entries), "동작에 프레임이 하나 이상 필요해.")
+        require(isinstance(name, str) and bool(name.strip()), "동작 이름이 없습니다.")
+        require(isinstance(entries, list) and bool(entries), "동작에 프레임이 하나 이상 필요합니다.")
         frames = []
         for entry in entries:
-            require(isinstance(entry, dict) and "rect" in entry, "프레임 정보가 잘못됐어.")
+            require(isinstance(entry, dict) and "rect" in entry, "프레임 정보가 올바르지 않습니다.")
             rect, pivot = entry["rect"], entry.get("pivot")
             if rect is not None:
-                require(isinstance(rect, list) and len(rect) == 4 and all(type(n) is int for n in rect), "영역은 정수 좌표 4개여야 해.")
+                require(isinstance(rect, list) and len(rect) == 4 and all(type(n) is int for n in rect), "영역은 정수 좌표 4개여야 합니다.")
                 x, y, w, h = rect
-                require(x >= 0 and y >= 0 and w > 0 and h > 0 and x + w <= size[0] and y + h <= size[1], "영역이 이미지 경계를 벗어났어.")
+                require(x >= 0 and y >= 0 and w > 0 and h > 0 and x + w <= size[0] and y + h <= size[1], "영역이 이미지 경계를 벗어났습니다.")
             require(isinstance(pivot, list) and len(pivot) == 2 and
-                    all(type(n) in (int, float) and math.isfinite(n) for n in pivot), "피봇 좌표가 잘못됐어.")
+                    all(type(n) in (int, float) and math.isfinite(n) for n in pivot), "피봇 좌표가 올바르지 않습니다.")
             frames.append(Frame(tuple(rect) if rect else None, tuple(pivot)))
         animations.append(Animation(name, frames, validated_fps(row.get("fps", legacy_fps))))
     image_path = Path(reference)
     if not image_path.is_absolute():
         image_path = Path(source).resolve().parent / image_path
     role_entries = document.get("event_bindings", document.get("game_roles", {}))
-    require(isinstance(role_entries, dict), "플레이 동작 설정이 잘못됐어.")
+    require(isinstance(role_entries, dict), "플레이 동작 설정이 올바르지 않습니다.")
     roles = {}
     for role, name in role_entries.items():
         if "event_bindings" not in document:
-            require(type(name) is int and 0 <= name < len(animations), "이전 플레이 동작 연결이 잘못됐어.")
+            require(type(name) is int and 0 <= name < len(animations), "이전 플레이 동작 연결이 올바르지 않습니다.")
             name = animations[name].name
-        require((role in ROLE_LABELS or role == "run") and isinstance(name, str), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 해.")
+        require((role in ROLE_LABELS or role == "run") and isinstance(name, str), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 합니다.")
         roles[role] = name
     return Project(image_path.resolve(), animations, roles), tuple(size)
 
@@ -200,7 +200,7 @@ class Player:
 
     def move_animation(self, source, target, after=False):
         animations = self.project.animations
-        require(0 <= source < len(animations) and 0 <= target < len(animations), "동작 위치가 잘못됐어.")
+        require(0 <= source < len(animations) and 0 <= target < len(animations), "동작 위치가 올바르지 않습니다.")
         destination = target + int(after)
         if source < destination:
             destination -= 1
@@ -489,11 +489,11 @@ class App:
     def __init__(self):
         self.running = True
         self.buttons = []
-        self.status = "기본 sonic_animations.json 설정을 불러왔어."
+        self.status = "기본 sonic_animations.json 설정을 불러왔습니다."
         self.project, image_size = import_project(DEFAULT_PROJECT)
         self.image_path = self.project.image_path
         self.image = p.load_image(str(self.image_path))
-        require((self.image.w, self.image.h) == image_size, "기본 JSON의 이미지 크기가 원본과 달라.")
+        require((self.image.w, self.image.h) == image_size, "기본 JSON의 이미지 크기가 원본과 다릅니다.")
         self.animation_index = 0
         self.frame_index = 0
         self.player = Player(self.project)
@@ -606,7 +606,7 @@ class App:
     def import_from(self, path):
         project, size = import_project(path)
         image = p.load_image(str(project.image_path))
-        require((image.w, image.h) == size, "원본 이미지 크기가 JSON과 달라.")
+        require((image.w, image.h) == size, "원본 이미지 크기가 JSON과 다릅니다.")
         # 데이터와 이미지가 모두 유효할 때만 현재 편집 상태를 교체한다.
         self.cancel_drag()
         self.image, self.image_path, self.project = image, project.image_path, project
@@ -654,7 +654,7 @@ class App:
             value = validated_fps(float(self.fps_text) if self.fps_editing else target.fps)
         except ValueError:
             self.fps_editing = True
-            self.status = "재생 속도는 0.1~240fps 사이의 숫자로 입력해."
+            self.status = "재생 속도는 0.1~240fps 범위의 숫자로 입력하세요."
             return
         if self.player.animation is target:
             self.player.set_fps(value)
@@ -792,7 +792,7 @@ class App:
             target, after = drag["target"]
             if self.player.move_animation(drag["source"], target, after):
                 self.animation_index = self.player.index
-                self.status = "애니메이션 순서 변경 완료 · JSON 저장으로 보관할 수 있어."
+                self.status = "애니메이션 순서 변경 완료 · JSON 저장으로 보관할 수 있습니다."
 
     def select_animation(self, index):
         self.cancel_drag()
@@ -866,7 +866,7 @@ class App:
         name = self.project.event_bindings[event]
         self.text(34, 124, f'현재 이벤트: "{event}" -> "{name}"', (255, 215, 64))
         missing = not any(a.name == name for a in self.project.animations)
-        self.text(34, 90, "연결한 이름을 찾지 못해 첫 동작을 표시 중이야." if missing else "입력·충돌 이벤트에 따라 연결된 동작을 자동 재생해.")
+        self.text(34, 90, "연결한 이름을 찾을 수 없어 첫 동작을 표시합니다." if missing else "입력·충돌 이벤트에 따라 연결된 동작을 자동 재생합니다.")
 
     def search_results(self, kind):
         query = self.search_queries[kind].strip().casefold()
@@ -894,11 +894,11 @@ class App:
     def bind_animation(self, name):
         self.game.stop_input()
         if sum(a.name == name for a in self.project.animations) != 1:
-            self.status = "동작 이름이 중복되어 있어. 고유한 이름으로 연결해야 해."
+            self.status = "동작 이름이 중복되어 있습니다. 고유한 이름으로 연결하세요."
             return
         self.project.event_bindings[self.binding_event] = name
         self.sync_game()
-        self.status = f'"{self.binding_event}" -> "{name}" 연결 변경 · JSON 저장으로 보관해.'
+        self.status = f'"{self.binding_event}" -> "{name}" 연결 변경 · JSON 저장으로 보관하세요.'
 
     def draw_binding_sidebar(self):
         rectangle((786, 202, 290, 450), (24, 30, 42))
@@ -1309,7 +1309,7 @@ class App:
             elif self.player.finished:
                 self.text(40, 572, "재생 완료 · 미리보기를 선택하면 다시 재생", (255, 209, 91))
             if self.frame.rect is None:
-                self.text(40, 546, "현재 프레임의 참조 영역이 미지정 상태야.")
+                self.text(40, 546, "현재 프레임의 참조 영역이 지정되지 않았습니다.")
         self.text(24, 724, "SONIC")
         self.tab((100, 704, 110, 36), "뷰어", "viewer")
         self.tab((220, 704, 110, 36), "편집", "editor")
@@ -1356,13 +1356,13 @@ def main():
     parser.add_argument("--smoke", type=int, default=0, metavar="FRAMES")
     args = parser.parse_args()
     if args.smoke < 0:
-        parser.error("--smoke 값은 0 이상이어야 해.")
+        parser.error("--smoke 값은 0 이상이어야 합니다.")
     p.open_canvas(WIDTH, HEIGHT)
     if not p.renderer:
         p.renderer = p.SDL_CreateRenderer(p.window, -1, p.SDL_RENDERER_SOFTWARE)
     if not p.renderer:
         p.close_canvas()
-        raise RuntimeError("화면 렌더러를 만들 수 없어.")
+        raise RuntimeError("화면 렌더러를 생성할 수 없습니다.")
     p.hide_lattice()
     p.SDL_SetRenderDrawBlendMode(p.renderer, p.SDL_BLENDMODE_BLEND)
     try:
