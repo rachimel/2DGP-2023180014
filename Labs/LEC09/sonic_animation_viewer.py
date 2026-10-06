@@ -21,6 +21,8 @@ SHEET = (312, 202, 764, 450)
 THUMBNAILS = (24, 60, 1052, 122)
 SPEED_INPUT = (560, 663, 126, 30)
 SPEED_APPLY = (698, 663, 96, 30)
+PLAY_Y = 332
+PLAY_MOVE_SPEED = 200
 BG = (19, 24, 34)
 PANEL = (29, 37, 50)
 TEXT = (223, 230, 242)
@@ -318,6 +320,10 @@ class App:
         self.fps_editing = False
         self.fps_select_all = False
         self.fps_text = f"{self.project.fps:g}"
+        self.play_x = WIDTH / 2
+        self.play_elapsed = 0.0
+        self.play_paused = False
+        self.play_keys = set()
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -370,6 +376,7 @@ class App:
                 self.region_mode = False
                 self.json_path = None
                 self.cancel_fps_edit()
+                self.reset_play()
                 self.status = f"이미지: {self.image_path.name}"
         except (OSError, RuntimeError, ValueError) as error:
             self.status = f"이미지 불러오기 실패: {error}"
@@ -400,6 +407,7 @@ class App:
         self.region_mode = False
         self.json_path = Path(path).resolve()
         self.cancel_fps_edit()
+        self.reset_play()
         self.status = f"JSON 불러오기 완료: {self.json_path.name}"
 
     def load_json(self):
@@ -416,6 +424,7 @@ class App:
         self.frame_index = 0
 
     def start_fps_edit(self):
+        self.play_keys.clear()
         self.fps_editing = True
         self.fps_select_all = True
         self.fps_text = f"{self.project.fps:g}"
@@ -426,13 +435,18 @@ class App:
         self.fps_text = f"{self.project.fps:g}"
 
     def apply_fps(self):
+        old_fps = self.project.fps
         try:
             self.player.set_fps(float(self.fps_text))
         except ValueError:
             self.fps_editing = True
             self.status = "재생 속도는 0.1~240fps 사이의 숫자로 입력해."
             return
-        self.frame_index = self.player.frame_index
+        if self.screen == "play":
+            self.play_elapsed *= old_fps / self.project.fps
+            self.frame_index = int((self.play_elapsed + 1e-10) * self.project.fps) % len(self.animation.frames)
+        else:
+            self.frame_index = self.player.frame_index
         self.cancel_fps_edit()
         self.status = f"재생 속도 적용: {self.project.fps:g}fps"
 
@@ -561,6 +575,7 @@ class App:
         self.player.select(index)
         self.animation_index = self.player.index
         self.frame_index = 0
+        self.play_elapsed = 0.0
 
     def handle_wheel(self, dx, dy, x, y):
         if self.thumbnail_drag:
@@ -572,7 +587,7 @@ class App:
             self.select_animation(self.animation_index - int(dy))
         elif contains(VIEW, x, y):
             factor = 1.15 ** max(-20, min(20, dy))
-            if self.screen == "viewer":
+            if self.screen in ("viewer", "play"):
                 self.view_scale = max(0.5, min(20, self.view_scale * factor))
                 self.view_pan = max(-2000, min(2000, self.view_pan + dx * 24))
             else:
@@ -588,6 +603,35 @@ class App:
         self.screen = screen
         self.player.select(self.animation_index)
         self.frame_index = 0
+        self.play_elapsed = 0.0
+        self.play_keys.clear()
+
+        if screen == "play":
+            self.reset_play()
+
+    def toggle_play_pause(self):
+        self.play_paused = not self.play_paused
+        self.play_keys.clear()
+
+    def reset_play(self):
+        self.play_x = WIDTH / 2
+        self.play_elapsed = 0.0
+        self.frame_index = 0
+        self.play_paused = False
+        self.play_keys.clear()
+
+    def draw_play(self):
+        with clipped(VIEW):
+            rectangle((VIEW[0], VIEW[1], VIEW[2], PLAY_Y - VIEW[1]), (35, 48, 58))
+            p.draw_line(VIEW[0], PLAY_Y, VIEW[0] + VIEW[2] - 1, PLAY_Y, 126, 179, 144)
+            for x in range(100, WIDTH, 100):
+                p.draw_line(x, PLAY_Y - 6, x, PLAY_Y, 126, 179, 144)
+            self.draw_frame(self.frame, self.play_x, PLAY_Y, self.view_scale)
+        self.text(40, 628, f"PLAY TEST BED / {self.animation.name}")
+        self.text(40, 600, f"고정 Y: {PLAY_Y} / X: {self.play_x:.1f} / {self.project.fps:g}fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)}")
+        self.text(40, 572, "선택한 동작 반복 · 중력 없음 · A/D 이동", (153, 171, 196))
+        if self.frame.rect is None:
+            self.text(40, 546, "현재 프레임의 참조 영역이 미지정 상태야.")
 
     def select_frame(self, step):
         self.cancel_drag()
@@ -803,6 +847,13 @@ class App:
             return
         if event.type == p.SDL_QUIT:
             self.running = False
+        elif event.type == p.SDL_KEYUP and event.key in (p.SDLK_a, p.SDLK_d):
+            self.play_keys.discard(event.key)
+        elif event.type == p.SDL_KEYDOWN and self.screen == "play" and event.key in (p.SDLK_a, p.SDLK_d):
+            if not self.play_paused:
+                self.play_keys.add(event.key)
+        elif event.type == p.SDL_KEYDOWN and self.screen == "play" and event.key == p.SDLK_SPACE:
+            self.toggle_play_pause()
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_ESCAPE:
             if self.drag:
                 self.cancel_drag()
@@ -854,6 +905,8 @@ class App:
         self.draw_thumbnails()
         if self.screen == "editor":
             self.draw_editor()
+        elif self.screen == "play":
+            self.draw_play()
         else:
             with clipped(VIEW):
                 p.draw_line(250, 332, 850, 332, 64, 81, 101)
@@ -869,11 +922,16 @@ class App:
         self.text(24, 724, "SONIC")
         self.tab((100, 704, 110, 36), "뷰어", "viewer")
         self.tab((220, 704, 110, 36), "편집", "editor")
-        self.button((390, 704, 150, 36), "JSON 저장", self.save_json)
-        self.button((552, 704, 170, 36), "JSON 불러오기", self.load_json)
+        self.tab((340, 704, 110, 36), "Play", "play")
+        self.button((470, 704, 130, 36), "JSON 저장", self.save_json)
+        self.button((612, 704, 170, 36), "JSON 불러오기", self.load_json)
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         if self.screen == "editor":
             self.draw_editor_controls()
+        elif self.screen == "play":
+            self.button((24, 663, 200, 30), "재생 [Space]" if self.play_paused else "일시정지 [Space]", self.toggle_play_pause, self.play_paused)
+            self.button((236, 663, 200, 30), "위치 / 재생 초기화", self.reset_play)
+            self.draw_speed_control()
         else:
             self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
             self.button((280, 663, 220, 30), f"목록 반복: {'ON' if self.player.loop else 'OFF'}", self.toggle_loop, self.player.loop)
@@ -883,10 +941,21 @@ class App:
         help_text = ("미리보기 드래그 순서 변경 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
                      if self.screen == "editor" else
                      "미리보기 클릭 선택 · 드래그 순서 변경 · 드래그 중 휠로 목록 넘기기 · Esc 드래그 취소")
+        if self.screen == "play":
+            help_text = "A/D 좌우 이동 · Left/Right 또는 미리보기로 동작 선택 · Space 일시정지 · 휠 확대/축소"
         self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
         if self.screen == "editor" or self.thumbnail_drag:
+            return
+        if self.screen == "play":
+            if not self.play_paused:
+                dt = max(0, dt)
+                direction = int(p.SDLK_d in self.play_keys) - int(p.SDLK_a in self.play_keys)
+                self.play_x = max(VIEW[0] + 20, min(VIEW[0] + VIEW[2] - 20,
+                                                  self.play_x + direction * PLAY_MOVE_SPEED * dt))
+                self.play_elapsed = (self.play_elapsed + dt) % (len(self.animation.frames) / self.project.fps)
+                self.frame_index = int((self.play_elapsed + 1e-10) * self.project.fps) % len(self.animation.frames)
             return
         self.player.update(dt)
         self.animation_index = self.player.index
