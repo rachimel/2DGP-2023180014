@@ -108,7 +108,10 @@ class App:
         if frame.rect is None:
             return
         left, bottom, w, h = frame.rect
-        self.image.clip_draw(left, bottom, w, h, x, y, w * scale, h * scale)
+        px, py = frame.pivot
+        self.image.clip_draw(left, bottom, w, h,
+                             x + (w / 2 - px) * scale,
+                             y + (h / 2 - py) * scale, w * scale, h * scale)
 
     def button(self, box, label, action, active=False):
         rectangle(box, (48, 89, 116) if active else (46, 56, 72))
@@ -145,7 +148,8 @@ class App:
         rectangle((0, 0, WIDTH, HEIGHT), BG)
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
-        self.draw_frame(self.frame, WIDTH / 2, VIEW[1] + VIEW[3] / 2, 5)
+        p.draw_line(250, 332, 850, 332, 64, 81, 101)
+        self.draw_frame(self.frame, WIDTH / 2, 332, 5)
         self.text(40, 628, self.animation.name)
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
