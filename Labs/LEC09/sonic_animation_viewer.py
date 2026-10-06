@@ -228,12 +228,28 @@ class App:
                 self.draw_frame(frame, box[0] + box[2] / 2 + (px - w / 2) * scale,
                                 125 + (py - h / 2) * scale, scale)
             self.text(box[0] + 14, 82, animation.name)
+            self.buttons.append((box, lambda i=index: self.select_animation(i)))
+
+    def select_animation(self, index):
+        self.player.select(index)
+        self.animation_index = self.player.index
+        self.frame_index = 0
+
+    def handle_wheel(self, dx, dy, x, y):
+        if contains(THUMBNAILS, x, y) and dy:
+            self.select_animation(self.animation_index - int(dy))
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
             self.running = False
         elif event.type == p.SDL_KEYDOWN and event.key == p.SDLK_ESCAPE:
             self.running = False
+        elif event.type == p.SDL_KEYDOWN and event.key in (p.SDLK_LEFT, p.SDLK_RIGHT):
+            self.select_animation(self.animation_index + (1 if event.key == p.SDLK_RIGHT else -1))
+        elif event.type == p.SDL_MOUSEWHEEL:
+            mx, my = p.c_int(), p.c_int()
+            p.SDL_GetMouseState(p.ctypes.byref(mx), p.ctypes.byref(my))
+            self.handle_wheel(event.x, event.y, mx.value, HEIGHT - 1 - my.value)
         elif event.type == p.SDL_MOUSEBUTTONDOWN and event.button == p.SDL_BUTTON_LEFT:
             for box, action in self.buttons:
                 if contains(box, event.x, HEIGHT - 1 - event.y):
