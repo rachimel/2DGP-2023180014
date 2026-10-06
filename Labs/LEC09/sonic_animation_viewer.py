@@ -211,9 +211,15 @@ class App:
             self.animation_index = self.frame_index = 0
 
     def draw_thumbnails(self):
-        for index, animation in enumerate(self.project.animations[:7]):
-            box = (40 + index * 146, 70, 136, 102)
+        count = min(7, len(self.project.animations))
+        start = -((count - 1) // 2)
+        for offset in range(start, start + count):
+            index = (self.animation_index + offset) % len(self.project.animations)
+            animation = self.project.animations[index]
+            box = (WIDTH / 2 - 68 + offset * 146, 70, 136, 102)
             rectangle(box, (39, 49, 65))
+            if index == self.animation_index:
+                rectangle(box, (255, 215, 64), filled=False)
             frame = animation.frames[0]
             if frame.rect:
                 w, h = frame.rect[2:]
