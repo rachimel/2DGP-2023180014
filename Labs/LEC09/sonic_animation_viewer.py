@@ -22,8 +22,10 @@ THUMBNAILS = (24, 60, 1052, 122)
 SPEED_INPUT = (560, 663, 126, 30)
 SPEED_APPLY = (698, 663, 96, 30)
 PLAY_Y = 332
-GAME_ROLES = {"start": 8, "idle": 7, "walk": 0, "run": 1, "charge": 3,
-              "dash": 2, "jump": 4, "brake": 5, "hurt": 6, "goal": 9}
+# 플레이 이벤트 -> 애니메이션 이름. 행 번호 대신 문자열로 연결한다.
+EVENT_ANIMATIONS = {"start": "동작 09", "idle": "동작 08", "walk": "동작 01",
+                    "run": "동작 02", "charge": "동작 04", "dash": "동작 03",
+                    "jump": "동작 05", "brake": "동작 06", "hurt": "동작 07", "goal": "동작 10"}
 ROLE_LABELS = {"start": "시작", "idle": "정지", "walk": "걷기", "run": "달리기", "charge": "스핀 충전",
                "dash": "대시", "jump": "점프", "brake": "제동", "hurt": "피격", "goal": "골"}
 BG = (19, 24, 34)
@@ -63,20 +65,15 @@ class Project:
     image_path: Path
     animations: list
     fps: float = DEFAULT_FPS
-    game_roles: dict = field(default_factory=dict)
+    event_bindings: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        for role, index in GAME_ROLES.items():
-            if role not in self.game_roles:
-                name = f"동작 {index + 1:02}"
-                self.game_roles[role] = next((a for a in self.animations if a.name == name),
-                                              self.animations[min(index, len(self.animations) - 1)])
+        for event, name in EVENT_ANIMATIONS.items():
+            self.event_bindings.setdefault(event, name)
 
     def role_animation(self, role):
-        candidate = self.game_roles[role]
-        if not any(a is candidate for a in self.animations):
-            candidate = self.game_roles[role] = self.animations[0]
-        return candidate
+        name = self.event_bindings[role]
+        return next((a for a in self.animations if a.name == name), self.animations[0])
 
 
 def new_project(image_path):
@@ -96,8 +93,7 @@ def project_document(project, image_size, target):
     return {
         "version": 1, "fps": project.fps, "coordinates": "bottom-left",
         "image": {"path": image_reference, "size": list(image_size)},
-        "game_roles": {role: next(i for i, a in enumerate(project.animations) if a is project.role_animation(role))
-                       for role in GAME_ROLES},
+        "event_bindings": dict(project.event_bindings),
         "animations": [
             {"name": animation.name, "frames": [
                 {"rect": list(frame.rect) if frame.rect else None, "pivot": list(frame.pivot)}
@@ -167,12 +163,15 @@ def parse_project(document, source):
     image_path = Path(reference)
     if not image_path.is_absolute():
         image_path = Path(source).resolve().parent / image_path
-    role_entries = document.get("game_roles", {})
+    role_entries = document.get("event_bindings", document.get("game_roles", {}))
     require(isinstance(role_entries, dict), "플레이 동작 설정이 잘못됐어.")
     roles = {}
-    for role, index in role_entries.items():
-        require(role in GAME_ROLES and type(index) is int and 0 <= index < len(animations), "플레이 동작 연결이 잘못됐어.")
-        roles[role] = animations[index]
+    for role, name in role_entries.items():
+        if "event_bindings" not in document:
+            require(type(name) is int and 0 <= name < len(animations), "이전 플레이 동작 연결이 잘못됐어.")
+            name = animations[name].name
+        require(role in EVENT_ANIMATIONS and isinstance(name, str) and bool(name.strip()), "이벤트 연결은 이벤트 이름과 애니메이션 이름 문자열이어야 해.")
+        roles[role] = name
     return Project(image_path.resolve(), animations, fps, roles), tuple(size)
 
 
@@ -476,6 +475,8 @@ class App:
         self.thumbnail_drag = None
         self.onion = True
         self.grid = True
+        self.grid_size = 8
+        self.mouse_position = (-1, -1)
         self.json_path = None
         self.fps_editing = False
         self.fps_select_all = False
@@ -782,18 +783,13 @@ class App:
         self.player.index = self.animation_index
         self.frame_index = self.game.frame_index
 
-    def cycle_role(self, role):
-        current = self.project.role_animation(role)
-        index = next(i for i, a in enumerate(self.project.animations) if a is current)
-        self.project.game_roles[role] = self.project.animations[(index + 1) % len(self.project.animations)]
-        self.sync_game()
-
-    def draw_game_roles(self):
-        self.text(34, 166, "동작 연결 · 버튼을 클릭해서 사용할 애니메이션 변경")
-        for i, role in enumerate(GAME_ROLES):
-            box = (34 + i % 5 * 208, 112 - i // 5 * 44, 198, 38)
-            label = f"{ROLE_LABELS[role]}: {self.project.role_animation(role).name[:8]}"
-            self.button(box, label, lambda r=role: self.cycle_role(r), self.game.state == role)
+    def draw_game_events(self):
+        self.text(34, 158, "이벤트 -> 애니메이션 · JSON의 event_bindings 문자열로 설정")
+        event = self.game.state
+        name = self.project.event_bindings[event]
+        self.text(34, 124, f'현재 이벤트: "{event}" -> "{name}"', (255, 215, 64))
+        missing = not any(a.name == name for a in self.project.animations)
+        self.text(34, 90, "연결한 이름을 찾지 못해 첫 동작을 표시 중이야." if missing else "입력·충돌 이벤트에 따라 연결된 동작을 자동 재생해.")
 
     def draw_play(self):
         game = self.game
@@ -873,16 +869,29 @@ class App:
         self.button((40, 584, 230, 30), f"[{'x' if self.region_mode else ' '}] 영역 지정 모드", self.toggle_region, self.region_mode)
         self.text(40, 552, f"영역: {self.frame.rect or '미지정'}")
         self.text(40, 526, f"피봇: {self.frame.pivot}")
-        self.button((40, 484, 230, 30), f"[{'x' if self.grid else ' '}] 그리드 ({self.grid_step()}px)", self.toggle_grid, self.grid)
+        self.button((40, 484, 140, 30), f"[{'x' if self.grid else ' '}] 격자 {self.grid_size}px", self.toggle_grid, self.grid)
+        self.button((184, 484, 40, 30), "-", lambda: self.resize_grid(-1))
+        self.button((228, 484, 40, 30), "+", lambda: self.resize_grid(1))
 
     def toggle_grid(self):
         self.grid = not self.grid
 
     def grid_step(self):
-        step = 1
-        while step * self.editor_scale < 8:
-            step *= 2
-        return step
+        return self.grid_size
+
+    def resize_grid(self, direction):
+        self.grid_size = max(1, min(256, self.grid_size * 2 if direction > 0 else self.grid_size // 2))
+
+    def hovered_grid_cell(self):
+        x, y = self.mouse_position
+        if not self.grid or self.screen != "editor" or not contains(SHEET, x, y):
+            return None
+        px, py = self.source_point(x, y)
+        if not contains((0, 0, self.image.w, self.image.h), px, py):
+            return None
+        step = self.grid_size
+        left, bottom = px // step * step, py // step * step
+        return (left, bottom, min(step, self.image.w - left), min(step, self.image.h - bottom))
 
     def draw_grid(self):
         if not self.grid:
@@ -903,6 +912,10 @@ class App:
             alpha = 105 if iy % (step * 8) == 0 else 55
             p.draw_line(ox, oy + iy * scale, ox + self.image.w * scale, oy + iy * scale,
                         140, 166, 192, alpha)
+        cell = self.hovered_grid_cell()
+        if cell:
+            rectangle(self.screen_rect(cell), (91, 209, 231, 65))
+            rectangle(self.screen_rect(cell), (91, 209, 231), filled=False)
 
     def toggle_region(self):
         self.cancel_drag()
@@ -1036,6 +1049,8 @@ class App:
         self.draw_editor_preview()
 
     def handle_event(self, event):
+        if event.type in (p.SDL_MOUSEMOTION, p.SDL_MOUSEBUTTONDOWN, p.SDL_MOUSEBUTTONUP):
+            self.mouse_position = (event.x, HEIGHT - 1 - event.y)
         if event.type == p.SDL_KEYDOWN and self.thumbnail_drag:
             if event.key == p.SDLK_ESCAPE:
                 self.cancel_drag()
@@ -1104,7 +1119,7 @@ class App:
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
         if self.screen == "play":
-            self.draw_game_roles()
+            self.draw_game_events()
         else:
             self.draw_thumbnails()
         if self.screen == "editor":
