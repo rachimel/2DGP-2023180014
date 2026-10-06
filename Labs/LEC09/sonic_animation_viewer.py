@@ -192,6 +192,11 @@ class App:
         except (OSError, RuntimeError, ValueError) as error:
             self.status = f"이미지 불러오기 실패: {error}"
 
+    def toggle_five(self):
+        self.player.repeat_five = not self.player.repeat_five
+        self.player.select(self.animation_index)
+        self.frame_index = 0
+
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
             self.running = False
@@ -217,6 +222,7 @@ class App:
             self.text(40, 572, "1초 대기 중", (255, 209, 91))
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
+        self.button((24, 663, 245, 30), f"5회 후 대기: {'ON' if self.player.repeat_five else 'OFF'}", self.toggle_five, self.player.repeat_five)
         self.text(24, 32, self.status)
 
     def update(self, dt):
