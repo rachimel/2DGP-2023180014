@@ -790,10 +790,17 @@ class App:
             if self.screen in ("viewer", "play"):
                 self.view_scale = max(0.5, min(20, self.view_scale * factor))
                 self.view_pan = max(-2000, min(2000, self.view_pan + dx * 24))
-            else:
+            elif contains(SHEET, x, y):
                 self.cancel_drag()
+                ox, oy = self.sheet_origin()
+                # 정수 픽셀로 반올림하지 않고 커서 아래 시트 좌표를 보존한다.
+                anchor_x = (x - ox) / self.editor_scale
+                anchor_y = (y - oy) / self.editor_scale
                 self.editor_scale = max(0.25, min(20, self.editor_scale * factor))
-                self.editor_pan[0] += dx * 24
+                nx, ny = self.sheet_origin()
+                self.editor_pan[0] += x - (nx + anchor_x * self.editor_scale) + dx * 24
+                self.editor_pan[1] += y - (ny + anchor_y * self.editor_scale)
+                self.mouse_position = (x, y)
 
     def set_screen(self, screen):
         if self.screen == screen:
