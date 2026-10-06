@@ -311,6 +311,7 @@ class App:
         self.region_mode = False
         self.drag = None
         self.draft_rect = None
+        self.thumbnail_drag = None
         self.onion = True
         self.grid = True
         self.json_path = None
@@ -475,25 +476,85 @@ class App:
             self.player.select(0)
             self.animation_index = self.frame_index = 0
 
-    def draw_thumbnails(self):
+    def thumbnail_items(self):
         count = min(7, len(self.project.animations))
         start = -((count - 1) // 2)
-        for offset in range(start, start + count):
-            index = (self.animation_index + offset) % len(self.project.animations)
-            animation = self.project.animations[index]
-            box = (WIDTH / 2 - 68 + offset * 146, 70, 136, 102)
-            rectangle(box, (39, 49, 65))
-            if index == self.animation_index:
-                rectangle(box, (255, 215, 64), filled=False)
-            frame = animation.frames[0]
-            if frame.rect:
-                w, h = frame.rect[2:]
-                scale = min(2, 110 / w, 62 / h)
-                px, py = frame.pivot
-                self.draw_frame(frame, box[0] + box[2] / 2 + (px - w / 2) * scale,
-                                125 + (py - h / 2) * scale, scale)
-            self.text(box[0] + 14, 82, animation.name[:7])
-            self.buttons.append((box, lambda i=index: self.select_animation(i)))
+        anchor = self.thumbnail_drag["anchor"] if self.thumbnail_drag else self.animation_index
+        return [((anchor + offset) % len(self.project.animations),
+                 (WIDTH / 2 - 68 + offset * 146, 70, 136, 102))
+                for offset in range(start, start + count)]
+
+    def draw_thumbnail(self, index, box, color=(39, 49, 65)):
+        animation = self.project.animations[index]
+        rectangle(box, color)
+        frame = animation.frames[0]
+        if frame.rect:
+            w, h = frame.rect[2:]
+            scale = min(2, 110 / w, 62 / h)
+            px, py = frame.pivot
+            self.draw_frame(frame, box[0] + box[2] / 2 + (px - w / 2) * scale,
+                            box[1] + 55 + (py - h / 2) * scale, scale)
+        self.text(box[0] + 14, box[1] + 12, animation.name[:7])
+
+    def draw_thumbnails(self):
+        drag = self.thumbnail_drag
+        drop_box = None
+        with clipped(THUMBNAILS):
+            for index, box in self.thumbnail_items():
+                self.draw_thumbnail(index, box)
+                if index == self.animation_index:
+                    rectangle(box, (255, 215, 64), filled=False)
+                if drag and drag["moving"] and drag["target"] and index == drag["target"][0]:
+                    drop_box = box
+            if drag and drag["moving"]:
+                x, y = drag["position"]
+                box = (x - 68, y - 51, 136, 102)
+                self.image.opacify(0.65)
+                try:
+                    self.draw_thumbnail(drag["source"], box, (46, 74, 89, 220))
+                    rectangle(box, (98, 221, 224), filled=False)
+                finally:
+                    self.image.opacify(1.0)
+            if drop_box:
+                marker_x = drop_box[0] + drop_box[2] + 3 if drag["target"][1] else drop_box[0] - 5
+                rectangle((marker_x, drop_box[1], 3, drop_box[3]), (98, 221, 224))
+
+    def hit_thumbnail(self, x, y):
+        return next((i for i, box in self.thumbnail_items() if contains(box, x, y)), None)
+
+    def thumbnail_drop_target(self, x, y):
+        if not contains(THUMBNAILS, x, y):
+            return None
+        index, box = min(self.thumbnail_items(), key=lambda item: abs(x - (item[1][0] + item[1][2] / 2)))
+        return index, x >= box[0] + box[2] / 2
+
+    def start_thumbnail_drag(self, index, x, y):
+        self.cancel_drag()
+        self.thumbnail_drag = {"source": index, "start": (x, y), "position": (x, y),
+                               "anchor": self.animation_index, "moving": False, "target": None}
+
+    def update_thumbnail_drag(self, x, y):
+        drag = self.thumbnail_drag
+        drag["position"] = (x, y)
+        sx, sy = drag["start"]
+        if abs(x - sx) + abs(y - sy) >= 6:
+            drag["moving"] = True
+        if drag["moving"]:
+            drag["target"] = self.thumbnail_drop_target(x, y)
+
+    def finish_thumbnail_drag(self, x, y):
+        self.update_thumbnail_drag(x, y)
+        drag = self.thumbnail_drag
+        hit = self.hit_thumbnail(x, y)
+        self.thumbnail_drag = None
+        if not drag["moving"]:
+            if hit == drag["source"]:
+                self.select_animation(hit)
+        elif drag["target"]:
+            target, after = drag["target"]
+            if self.player.move_animation(drag["source"], target, after):
+                self.animation_index = self.player.index
+                self.status = "애니메이션 순서 변경 완료 · JSON 저장으로 보관할 수 있어."
 
     def select_animation(self, index):
         self.cancel_drag()
@@ -502,6 +563,11 @@ class App:
         self.frame_index = 0
 
     def handle_wheel(self, dx, dy, x, y):
+        if self.thumbnail_drag:
+            if contains(THUMBNAILS, x, y) and dy:
+                self.thumbnail_drag["anchor"] = (self.thumbnail_drag["anchor"] - int(dy)) % len(self.project.animations)
+                self.update_thumbnail_drag(x, y)
+            return
         if contains(THUMBNAILS, x, y) and dy:
             self.select_animation(self.animation_index - int(dy))
         elif contains(VIEW, x, y):
@@ -634,6 +700,7 @@ class App:
     def cancel_drag(self):
         self.drag = None
         self.draft_rect = None
+        self.thumbnail_drag = None
 
     def source_point(self, x, y):
         ox, oy = self.sheet_origin()
@@ -727,6 +794,10 @@ class App:
         self.draw_editor_preview()
 
     def handle_event(self, event):
+        if event.type == p.SDL_KEYDOWN and self.thumbnail_drag:
+            if event.key == p.SDLK_ESCAPE:
+                self.cancel_drag()
+            return
         if event.type == p.SDL_KEYDOWN and self.fps_editing:
             self.handle_fps_key(event.key)
             return
@@ -754,15 +825,25 @@ class App:
             if self.fps_editing and not contains(SPEED_INPUT, x, y) and not contains(SPEED_APPLY, x, y):
                 self.cancel_fps_edit()
             if event.button == p.SDL_BUTTON_LEFT:
+                index = self.hit_thumbnail(x, y)
+                if index is not None:
+                    self.start_thumbnail_drag(index, x, y)
+                    return
                 for box, action in self.buttons:
                     if contains(box, x, y):
                         action()
                         return
             self.editor_down(event.button, x, y)
         elif event.type == p.SDL_MOUSEMOTION:
-            self.editor_motion(event.x, HEIGHT - 1 - event.y)
+            if self.thumbnail_drag:
+                self.update_thumbnail_drag(event.x, HEIGHT - 1 - event.y)
+            else:
+                self.editor_motion(event.x, HEIGHT - 1 - event.y)
         elif event.type == p.SDL_MOUSEBUTTONUP:
-            self.editor_up(event.button, event.x, HEIGHT - 1 - event.y)
+            if self.thumbnail_drag and event.button == p.SDL_BUTTON_LEFT:
+                self.finish_thumbnail_drag(event.x, HEIGHT - 1 - event.y)
+            else:
+                self.editor_up(event.button, event.x, HEIGHT - 1 - event.y)
 
     def draw(self):
         self.buttons = []
@@ -799,13 +880,13 @@ class App:
             self.draw_speed_control()
         with clipped((24, 20, WIDTH - 48, 34)):
             self.text(24, 32, self.status)
-        help_text = ("상단 탭으로 화면 전환 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
+        help_text = ("미리보기 드래그 순서 변경 · 휠 확대/축소 · 중클릭 시트 이동 · 우클릭 피봇 · Delete 영역 제거"
                      if self.screen == "editor" else
-                     "미리보기 휠/클릭 선택 · 재생 화면 휠 확대/축소 · 좌우 휠 이동 · Left/Right 동작 선택")
+                     "미리보기 클릭 선택 · 드래그 순서 변경 · 드래그 중 휠로 목록 넘기기 · Esc 드래그 취소")
         self.text(24, 10, help_text, (153, 171, 196))
 
     def update(self, dt):
-        if self.screen == "editor":
+        if self.screen == "editor" or self.thumbnail_drag:
             return
         self.player.update(dt)
         self.animation_index = self.player.index
