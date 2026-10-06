@@ -14,7 +14,8 @@ import pico2d.pico2d as p
 
 BASE_DIR = Path(__file__).resolve().parent
 WIDTH, HEIGHT = 1100, 760
-FPS = 60
+DEFAULT_FPS = 60
+DISPLAY_FPS = 60
 VIEW = (24, 202, 1052, 450)
 SHEET = (312, 202, 764, 450)
 THUMBNAILS = (24, 60, 1052, 122)
@@ -54,6 +55,7 @@ class Animation:
 class Project:
     image_path: Path
     animations: list
+    fps: float = DEFAULT_FPS
 
 
 def new_project(image_path):
@@ -71,7 +73,7 @@ def project_document(project, image_size, target):
     except ValueError:
         image_reference = project.image_path.as_posix()
     return {
-        "version": 1, "fps": FPS, "coordinates": "bottom-left",
+        "version": 1, "fps": project.fps, "coordinates": "bottom-left",
         "image": {"path": image_reference, "size": list(image_size)},
         "animations": [
             {"name": animation.name, "frames": [
@@ -103,10 +105,16 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def validated_fps(value):
+    require(type(value) in (int, float) and math.isfinite(value) and 0.1 <= value <= 240,
+            "재생 속도는 0.1~240fps 사이의 숫자여야 해.")
+    return float(value)
+
+
 def parse_project(document, source):
     require(isinstance(document, dict), "JSON 최상위는 객체여야 해.")
     require(document.get("version") == 1, "지원하지 않는 JSON 버전이야.")
-    require(document.get("fps") == FPS, "재생 속도는 60fps여야 해.")
+    fps = validated_fps(document.get("fps"))
     require(document.get("coordinates") == "bottom-left", "좌표 기준이 일치하지 않아.")
     image = document.get("image")
     require(isinstance(image, dict), "이미지 정보가 없어.")
@@ -136,7 +144,7 @@ def parse_project(document, source):
     image_path = Path(reference)
     if not image_path.is_absolute():
         image_path = Path(source).resolve().parent / image_path
-    return Project(image_path.resolve(), animations), tuple(size)
+    return Project(image_path.resolve(), animations, fps), tuple(size)
 
 
 def import_project(source):
@@ -160,13 +168,21 @@ class Player:
         self.elapsed = 0.0
         self.finished = False
 
+    def set_fps(self, value):
+        value = validated_fps(value)
+        # 현재 프레임의 진행률과 1초 대기의 남은 시간을 보존한다.
+        play_elapsed = min(self.elapsed, self.play_duration)
+        wait_elapsed = max(0, self.elapsed - self.play_duration)
+        self.elapsed = play_elapsed * self.project.fps / value + wait_elapsed
+        self.project.fps = value
+
     @property
     def frame_count(self):
         return len(self.project.animations[self.index].frames)
 
     @property
     def completed_cycles(self):
-        return min(int((self.elapsed + 1e-10) * FPS / self.frame_count), self.repetitions)
+        return min(int((self.elapsed + 1e-10) * self.project.fps / self.frame_count), self.repetitions)
 
     @property
     def repetitions(self):
@@ -174,7 +190,7 @@ class Player:
 
     @property
     def play_duration(self):
-        return self.frame_count * self.repetitions / FPS
+        return self.frame_count * self.repetitions / self.project.fps
 
     @property
     def duration(self):
@@ -188,14 +204,14 @@ class Player:
     def frame_index(self):
         if self.elapsed + 1e-10 >= self.play_duration:
             return self.frame_count - 1
-        return int((self.elapsed + 1e-10) * FPS) % self.frame_count
+        return int((self.elapsed + 1e-10) * self.project.fps) % self.frame_count
 
     def update(self, dt):
         if self.finished:
             return
         self.elapsed += max(0, dt)
         if self.loop:
-            period = sum(len(a.frames) * self.repetitions / FPS + (1 if self.repeat_five else 0)
+            period = sum(len(a.frames) * self.repetitions / self.project.fps + (1 if self.repeat_five else 0)
                          for a in self.project.animations)
             self.elapsed %= period
         while self.elapsed + 1e-10 >= self.duration:
@@ -680,7 +696,7 @@ class App:
                 p.draw_line(250, 332, 850, 332, 64, 81, 101)
                 self.draw_frame(self.frame, WIDTH / 2 + self.view_pan, 332, self.view_scale)
             self.text(40, 628, self.animation.name)
-            self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
+            self.text(40, 600, f"{self.project.fps:g}fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
             if self.player.waiting:
                 self.text(40, 572, "1초 대기 중", (255, 209, 91))
             elif self.player.finished:
@@ -743,7 +759,7 @@ def main():
             count += 1
             if args.smoke and count >= args.smoke:
                 break
-            p.delay(max(0, 1 / FPS - (time.perf_counter() - start)))
+            p.delay(max(0, 1 / DISPLAY_FPS - (time.perf_counter() - start)))
     finally:
         p.close_canvas()
 
