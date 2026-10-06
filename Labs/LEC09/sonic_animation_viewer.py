@@ -77,6 +77,10 @@ class Player:
         return len(self.project.animations[self.index].frames)
 
     @property
+    def completed_cycles(self):
+        return int((self.elapsed + 1e-10) * FPS / self.frame_count)
+
+    @property
     def frame_index(self):
         return min(int((self.elapsed + 1e-10) * FPS), self.frame_count - 1)
 
@@ -189,6 +193,7 @@ class App:
         p.draw_line(250, 332, 850, 332, 64, 81, 101)
         self.draw_frame(self.frame, WIDTH / 2, 332, 5)
         self.text(40, 628, self.animation.name)
+        self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.text(24, 32, self.status)
