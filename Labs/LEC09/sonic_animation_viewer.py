@@ -173,6 +173,7 @@ class App:
         self.frame_index = 0
         self.player = Player(self.project)
         self.view_scale = 5.0
+        self.view_pan = 0.0
         self.font = p.load_font(str(Path(p.__file__).parent / "data" / "ConsolaMalgun.ttf"), 16)
 
     def text(self, x, y, value, color=TEXT):
@@ -255,6 +256,7 @@ class App:
             self.select_animation(self.animation_index - int(dy))
         elif contains(VIEW, x, y):
             self.view_scale = max(0.5, min(20, self.view_scale * 1.15 ** max(-20, min(20, dy))))
+            self.view_pan = max(-2000, min(2000, self.view_pan + dx * 24))
 
     def handle_event(self, event):
         if event.type == p.SDL_QUIT:
@@ -282,7 +284,7 @@ class App:
         self.draw_thumbnails()
         with clipped(VIEW):
             p.draw_line(250, 332, 850, 332, 64, 81, 101)
-            self.draw_frame(self.frame, WIDTH / 2, 332, self.view_scale)
+            self.draw_frame(self.frame, WIDTH / 2 + self.view_pan, 332, self.view_scale)
         self.text(40, 628, self.animation.name)
         self.text(40, 600, f"60fps / 프레임 {self.frame_index + 1}/{len(self.animation.frames)} / 완료 {self.player.completed_cycles}회")
         if self.player.waiting:
