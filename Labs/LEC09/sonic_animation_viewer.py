@@ -83,6 +83,8 @@ class App:
         rectangle((0, 0, WIDTH, HEIGHT), BG)
         rectangle(VIEW, PANEL)
         rectangle(THUMBNAILS, PANEL)
+        scale = min((VIEW[2] - 40) / self.image.w, (VIEW[3] - 40) / self.image.h)
+        self.image.draw(WIDTH / 2, VIEW[1] + VIEW[3] / 2, self.image.w * scale, self.image.h * scale)
         self.text(24, 724, "SONIC / ANIMATION VIEWER")
         self.button((900, 704, 176, 36), "이미지 열기", self.open_image)
         self.text(24, 32, self.status)
